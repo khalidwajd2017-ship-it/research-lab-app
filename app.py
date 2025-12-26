@@ -19,28 +19,21 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (مع التخزين المؤقت للأداء) ⚡
+# 2. إعدادات قاعدة البيانات
 # ==========================================
 
-# التحقق من الأسرار
 if "db" not in st.secrets:
-    st.error("❌ ملف الأسرار غير موجود. يرجى إعداده في Streamlit Cloud.")
+    st.error("❌ ملف الأسرار غير موجود.")
     st.stop()
 
-# استخدام التخزين المؤقت لمنع إعادة الاتصال مع كل تحديث للصفحة
 @st.cache_resource
 def get_db_engine():
     try:
         db_config = st.secrets["db"]
         encoded_password = urllib.parse.quote_plus(db_config["password"])
-        
-        # بناء الرابط
         DATABASE_URL = f"postgresql://{db_config['user']}:{encoded_password}@{db_config['host']}:{db_config['port']}/{db_config['name']}?sslmode=require"
-        
-        # إنشاء المحرك
         return create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
     except Exception as e:
-        st.error(f"فشل إنشاء محرك قاعدة البيانات: {e}")
         return None
 
 engine = get_db_engine()
@@ -81,27 +74,20 @@ class Work(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
-# دالة التهيئة (تعمل مرة واحدة فقط)
 def init_db():
     try:
-        # التأكد من وجود الجداول
         Base.metadata.create_all(bind=engine)
-        
         session = SessionLocal()
-        # إضافة بيانات أولية ذكية
         if not session.query(Team).first():
             teams = [Team(name="دراسات سوسيولوجية"), Team(name="علم النفس العيادي"), Team(name="تكنولوجيا التعليم")]
             session.add_all(teams)
             session.commit()
-            
         if not session.query(User).filter_by(username="admin").first():
             hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
             session.commit()
         session.close()
-    except Exception as e:
-        # تسجيل الخطأ في الكونسول فقط
-        print(f"DB Init Log: {e}")
+    except: pass
 
 # ==========================================
 # 3. الخدمات (Services)
@@ -162,7 +148,7 @@ def get_works_dataframe():
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق (CSS) - RTL الاحترافي
+# 4. التنسيق (CSS) - RTL
 # ==========================================
 st.markdown("""
 <style>
@@ -226,8 +212,6 @@ st.markdown("""
     
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
     .stRadio { direction: rtl; text-align: right; }
-    
-    /* تنسيق خاص للتوست */
     div[data-testid="stToast"] { direction: rtl; text-align: right; font-family: 'Cairo'; }
 </style>
 """, unsafe_allow_html=True)
@@ -244,7 +228,6 @@ if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # التوسط في الصفحة الرئيسية
         st.markdown("""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
             <div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>
@@ -260,12 +243,12 @@ if not st.session_state['logged_in']:
                     u = st.text_input("اسم المستخدم")
                     p = st.text_input("كلمة المرور", type="password")
                     if st.form_submit_button("تسجيل الدخول", use_container_width=True, type="primary"):
-                        with st.spinner("جاري التحقق..."): # ⏳ سبينر احترافي
+                        with st.spinner("جاري التحقق..."):
                             user = auth_user(u, p)
                             if user:
                                 st.session_state['logged_in'] = True
                                 st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else "إدارة مركزية", 'username': user.username}
-                                st.toast("تم تسجيل الدخول بنجاح! 👋", icon="✅") # 🍞 توست
+                                st.toast("تم تسجيل الدخول بنجاح! 👋", icon="✅")
                                 time.sleep(1)
                                 st.rerun()
                             else: st.toast("خطأ في اسم المستخدم أو كلمة المرور", icon="❌")
@@ -300,7 +283,6 @@ if not st.session_state['logged_in']:
 else:
     user = st.session_state['user']
     with st.sidebar:
-        # التوسط في السايدبار
         st.markdown("""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
             <div style="font-size: 40px;">🎓</div>
@@ -332,7 +314,12 @@ else:
             st.rerun()
 
     if selection in ["لوحة القيادة العامة", "لوحة قيادة الفرقة"]:
-        st.title(selection_key)
+        # ✅ التعديل هنا: إضافة اسم الفرقة إلى العنوان إذا كانت لوحة قيادة الفرقة
+        if selection == "لوحة قيادة الفرقة":
+            st.title(f"📈 {selection_key}: {user['team']}")
+        else:
+            st.title(selection_key)
+
         df = get_works_dataframe()
         current_df = df
         filter_title = "تصفية البيانات العامة"
@@ -386,15 +373,6 @@ else:
         w_type = st.selectbox("", ["مقال علمي", "مداخلة دولية", "مداخلة وطنية", "كتاب", "مشروع بحث"], label_visibility="collapsed")
         st.markdown("---")
 
-        # 🧹 منطق تفريغ الحقول باستخدام Session State
-        if 'form_submitted' not in st.session_state: st.session_state['form_submitted'] = False
-
-        # دالة لإعادة تعيين النموذج
-        def clear_form():
-            st.session_state['form_submitted'] = True
-        
-        # إذا تم الحفظ، نقوم بتفريغ القيم (عبر إعادة تحميل الصفحة أو مسح الـ key)
-        # الطريقة الأبسط في ستريم ليت هي استخدام مفتاح فريد يتغير مع كل حفظ
         if 'form_id' not in st.session_state: st.session_state['form_id'] = 0
 
         with st.form(key=f"dynamic_form_{st.session_state['form_id']}"):
@@ -402,7 +380,6 @@ else:
             with col_main1: w_title = st.text_input("العنوان الكامل للعمل")
             with col_main2: w_date = st.date_input("تاريخ النشر / الإنجاز")
 
-            # محاذاة النص لليمين
             st.markdown(f"<div style='text-align: right; direction: rtl; font-weight: bold; margin-top:15px;'>📄 تفاصيل خاصة بـ: {w_type}</div>", unsafe_allow_html=True)
             
             extra_data = {}
@@ -462,13 +439,11 @@ else:
                     
                     json_str = json.dumps(extra_data, ensure_ascii=False)
                     
-                    # ⏳ سبينر أثناء الحفظ
                     with st.spinner("جاري حفظ البيانات في السجل..."):
                         success = add_work_service(user['id'], w_title, json_str, w_type, w_class, w_date, pts)
                         if success:
                             st.toast("✅ تم حفظ النتاج العلمي بنجاح!", icon="💾")
                             time.sleep(1)
-                            # تغيير معرف النموذج لإفراغه
                             st.session_state['form_id'] += 1 
                             st.rerun()
                         else:
