@@ -8,15 +8,30 @@ from datetime import date, datetime
 import plotly.express as px
 import time
 import json 
-import urllib.parse 
+import urllib.parse
+import base64 # 🆕 مكتبة مطلوبة لتشفير الصور
+import os # 🆕 للتحقق من وجود ملف الصورة
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
     page_title="منصة التميز البحثي",
     layout="wide",
     initial_sidebar_state="expanded",
-    page_icon="🎓"
+    page_icon="🎓" # أيقونة المتصفح تبقى كما هي
 )
+
+# ==========================================
+# 🆕 دالة مساعدة لتحويل الصورة إلى Base64
+# ==========================================
+def get_img_as_base64(file_path):
+    """تقرأ ملف الصورة وتحوله إلى سلسلة base64 لتضمينها في HTML"""
+    try:
+        with open(file_path, "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    except Exception as e:
+        print(f"Error reading image: {e}")
+        return None
 
 # ==========================================
 # 2. إعدادات قاعدة البيانات
@@ -228,9 +243,19 @@ if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("""
+        
+        # إعداد الشعار للصفحة الرئيسية (اختياري، إذا أردت وضعه هنا أيضاً)
+        logo_path = "logo.png"
+        main_logo_html = '<div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>' # الافتراضي
+        if os.path.exists(logo_path):
+            img_base64 = get_img_as_base64(logo_path)
+            if img_base64:
+                # شعار أكبر قليلاً للصفحة الرئيسية
+                main_logo_html = f'<img src="data:image/png;base64,{img_base64}" style="width: 180px; margin-bottom: 20px;">'
+
+        st.markdown(f"""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
-            <div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>
+            {main_logo_html}
             <h1 style="color:#1e40af; font-family:'Cairo'; font-weight: 800; margin: 0; text-align: center !important; width: 100%;">بوابة البحث العلمي</h1>
             <p style="color:#64748b; font-family:'Tajawal'; font-size: 18px; margin-top: 5px; text-align: center !important; width: 100%;">نظام إدارة المخابر الجامعية الموحد</p>
         </div>
@@ -283,10 +308,23 @@ if not st.session_state['logged_in']:
 else:
     user = st.session_state['user']
     with st.sidebar:
-        st.markdown("""
+        # ✅ إعداد الشعار للسايدبار
+        logo_path = "logo.png" # تأكد من وجود هذا الملف
+        sidebar_logo_html = "" # المتغير الذي سيحوي كود الصورة
+
+        if os.path.exists(logo_path):
+            img_base64 = get_img_as_base64(logo_path)
+            if img_base64:
+                # تنسيق الصورة لتكون مناسبة للسايدبار (عرض 150px مثلاً)
+                sidebar_logo_html = f'<img src="data:image/png;base64,{img_base64}" style="width: 150px; margin-bottom: 15px;">'
+        else:
+             # إذا لم يتم العثور على الشعار، لا نعرض شيئاً (أو يمكنك وضع أيقونة بديلة هنا)
+             sidebar_logo_html = '<div style="font-size: 40px; margin-bottom: 10px;">🏛️</div>'
+
+        # عرض الشعار والعناوين في الوسط
+        st.markdown(f"""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
-            <div style="font-size: 40px;">🎓</div>
-            <h3 style="margin: 5px 0 0 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">المركز البحثي أدرار</h3>
+            {sidebar_logo_html} <h3 style="margin: 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">المركز البحثي أدرار</h3>
             <span style="font-size: 12px; color: #64748b; display: block; text-align: center !important;">منصة التميز البحثي</span>
         </div>
         """, unsafe_allow_html=True)
@@ -314,7 +352,6 @@ else:
             st.rerun()
 
     if selection in ["لوحة القيادة العامة", "لوحة قيادة الفرقة"]:
-        # ✅ التعديل هنا: إضافة اسم الفرقة إلى العنوان إذا كانت لوحة قيادة الفرقة
         if selection == "لوحة قيادة الفرقة":
             st.title(f"📈 {selection_key}: {user['team']}")
         else:
