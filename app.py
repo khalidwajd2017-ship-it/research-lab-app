@@ -25,7 +25,7 @@ st.set_page_config(
 RAW_PASS = "khalidcom_1981"
 DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
 DB_USER = "postgres"
-DB_NAME = "postgres"
+DB_NAME = "research-lab-db"
 
 # ✅ 1. استخدام المنفذ 6543 (Supavisor) بدلاً من 5432 لحل مشاكل الشبكة
 DB_PORT = "6543" 
@@ -490,4 +490,5 @@ else:
                 st.info(f"الاسم: {user['name']}")
                 st.info(f"الدور: {user['role']}")
                 st.info(f"الفرقة: {user['team']}")
+
 
