@@ -324,7 +324,7 @@ else:
         # عرض الشعار والعناوين في الوسط
         st.markdown(f"""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
-            {sidebar_logo_html} <h3 style="margin: 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">المركز البحثي أدرار</h3>
+            {sidebar_logo_html} <h3 style="margin: 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">وحدة البحث في علوم الإنسان للدراسات الفلسفية، الاجتماعية والانسانية</h3>
             <span style="font-size: 12px; color: #64748b; display: block; text-align: center !important;">منصة التميز البحثي</span>
         </div>
         """, unsafe_allow_html=True)
@@ -589,3 +589,4 @@ else:
                 st.info(f"الاسم: {user['name']}")
                 st.info(f"الدور: {user['role']}")
                 st.info(f"الفرقة: {user['team']}")
+
