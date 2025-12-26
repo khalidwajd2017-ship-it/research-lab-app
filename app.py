@@ -2,13 +2,12 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.engine import URL # ✅ استيراد مكتبة إنشاء الروابط الآمنة
 import bcrypt
 from datetime import date
 import plotly.express as px
 import time
 import json 
-import urllib.parse  # 👈 مكتبة ضرورية لإصلاح كلمة المرور
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -19,32 +18,27 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (تم الإصلاح هنا) 🛠️
+# 2. إعدادات قاعدة البيانات (الطريقة الآمنة) 🛠️
 # ==========================================
 
-# 1. نضع بيانات الاتصال في متغيرات
-# (تم نسخ بياناتك بدقة من الكود الذي أرسلته)
-RAW_DB_PASS = "8?Q4.G/iLe84d-j" 
-DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
-DB_NAME = "postgres"
-DB_USER = "postgres"
-DB_PORT = "5432"
+# بناء الرابط كـ "كائن" (Object) بدلاً من نص، لتفادي أخطاء الرموز في كلمة السر
+db_url = URL.create(
+    drivername="postgresql",
+    username="postgres",
+    password="8?Q4.G/iLe84d-j",  # ✅ نضع كلمة السر كما هي تماماً هنا
+    host="db.jecmwuiqofztficcujpe.supabase.co",
+    port=5432,
+    database="postgres"
+)
 
-# 2. ✅ الخطوة الحاسمة: تشفير كلمة المرور لتعمل داخل الرابط
-# (هذا يحول ? إلى %3F ويحول / إلى %2F)
-encoded_password = urllib.parse.quote_plus(RAW_DB_PASS)
-
-# 3. بناء الرابط الآمن
-DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-# 4. الاتصال
+# إنشاء الاتصال
 try:
-    # pool_pre_ping=True يساعد في استقرار الاتصال السحابي
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+    # pool_pre_ping=True يعيد الاتصال تلقائياً إذا انقطع
+    engine = create_engine(db_url, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 except Exception as e:
-    st.error(f"خطأ في الاتصال بقاعدة البيانات: {e}")
+    st.error(f"خطأ جسيم في الاتصال بقاعدة البيانات: {e}")
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -69,7 +63,7 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)
-    details = Column(Text, nullable=True) # JSON
+    details = Column(Text, nullable=True) 
     activity_type = Column(String, nullable=False)
     classification = Column(String, nullable=True)
     publication_date = Column(Date, nullable=False)
@@ -92,7 +86,6 @@ def init_db():
             session.commit()
         session.close()
     except Exception as e:
-        # طباعة الخطأ في السجل فقط لتجنب إيقاف التطبيق
         print(f"Init DB Warning: {e}")
 
 # ==========================================
@@ -104,10 +97,8 @@ def auth_user(username, password):
         user = db.query(User).options(joinedload(User.team)).filter(User.username == username).first()
         if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
             return user
-    except:
-        pass
-    finally:
-        db.close()
+    except: pass
+    finally: db.close()
     return None
 
 def register_user_service(username, password, full_name, role, team_name):
@@ -128,10 +119,8 @@ def add_work_service(user_id, title, details_json, type_, class_, date_obj, poin
     try:
         db.add(Work(user_id=user_id, title=title, details=details_json, activity_type=type_, classification=class_, publication_date=date_obj, year=date_obj.year, points=points))
         db.commit()
-    except:
-        db.rollback()
-    finally:
-        db.close()
+    except: db.rollback()
+    finally: db.close()
 
 def change_password_service(user_id, new_password):
     db = SessionLocal()
@@ -142,8 +131,7 @@ def change_password_service(user_id, new_password):
             db.commit()
             return True
         return False
-    finally:
-        db.close()
+    finally: db.close()
 
 def get_works_dataframe():
     query = """
@@ -152,10 +140,8 @@ def get_works_dataframe():
     FROM works w JOIN users u ON w.user_id = u.id LEFT JOIN teams t ON u.team_id = t.id
     ORDER BY w.publication_date DESC
     """
-    try:
-        return pd.read_sql(query, engine)
-    except:
-        return pd.DataFrame()
+    try: return pd.read_sql(query, engine)
+    except: return pd.DataFrame()
 
 # ==========================================
 # 4. التنسيق (CSS)
@@ -163,48 +149,16 @@ def get_works_dataframe():
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
-    
-    :root {
-        --primary-color: #2563eb; 
-        --bg-color: #f8fafc;
-        --text-color: #1e293b;
-    }
-
-    html, body, .stApp {
-        font-family: 'Tajawal', sans-serif;
-        direction: rtl;
-        background-color: var(--bg-color);
-        color: var(--text-color);
-    }
-    
-    h1, h2, h3, h4 {
-        font-family: 'Cairo', sans-serif !important;
-        font-weight: 800;
-        color: #1e3a8a;
-    }
-
-    /* إصلاح السايدبار */
-    [data-testid="stSidebar"] {
-        background-color: #ffffff;
-        border-left: 1px solid #e2e8f0;
-        min-width: 300px !important;
-        max-width: 320px !important;
-    }
-    
-    /* تنسيق الجداول */
+    :root { --primary-color: #2563eb; --bg-color: #f8fafc; --text-color: #1e293b; }
+    html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: var(--bg-color); color: var(--text-color); }
+    h1, h2, h3, h4 { font-family: 'Cairo', sans-serif !important; font-weight: 800; color: #1e3a8a; }
+    [data-testid="stSidebar"] { background-color: #ffffff; border-left: 1px solid #e2e8f0; min-width: 300px !important; max-width: 320px !important; }
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] table { direction: rtl !important; text-align: right !important; }
     [data-testid="stDataFrame"] th { text-align: right !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
-    
-    /* تنسيق التبويبات Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
-    .stTabs [data-baseweb="tab"] {
-        height: 45px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0;
-        gap: 1px; padding-top: 8px; padding-bottom: 8px; font-family: 'Cairo', sans-serif; font-weight: 700; font-size: 14px;
-    }
+    .stTabs [data-baseweb="tab"] { height: 45px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0; gap: 1px; padding-top: 8px; padding-bottom: 8px; font-family: 'Cairo', sans-serif; font-weight: 700; font-size: 14px; }
     .stTabs [aria-selected="true"] { background-color: #eff6ff; color: #2563eb; border-bottom: 2px solid #2563eb; }
-
-    /* بطاقات KPI */
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
     .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
     .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
@@ -213,7 +167,6 @@ st.markdown("""
     .kpi-icon { width: 40px; height: 40px; background: #eff6ff; color: var(--primary-color); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
     .kpi-value { font-family: 'Cairo', sans-serif; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1; }
     .kpi-title { font-size: 13px; color: #64748b; font-weight: 500; margin-top: 5px; }
-
     .stButton>button { font-family: 'Cairo', sans-serif !important; font-weight: 700; border-radius: 8px; height: 45px; }
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
 </style>
@@ -248,8 +201,13 @@ if not st.session_state['logged_in']:
             with tab2:
                 with st.form("signup"):
                     session = SessionLocal()
-                    tn = [t.name for t in session.query(Team).all()]
+                    # استخدام try هنا لتجنب انهيار التطبيق إذا فشل الاتصال في جلب الفرق
+                    try:
+                        tn = [t.name for t in session.query(Team).all()]
+                    except:
+                        tn = ["يرجى تحديث الصفحة - خطأ اتصال"]
                     session.close()
+                    
                     nu = st.text_input("اسم المستخدم")
                     np = st.text_input("كلمة المرور", type="password")
                     nf = st.text_input("الاسم الكامل")
@@ -259,7 +217,7 @@ if not st.session_state['logged_in']:
                     if st.form_submit_button("إنشاء حساب", use_container_width=True):
                         rm = {"باحث": "researcher", "رئيس فرقة": "leader", "مدير": "admin"}
                         cm = {"researcher": "RES2025", "leader": "LEADER2025", "admin": "ADMIN2025"}
-                        if co == cm[rm[rc]]:
+                        if co == cm.get(rm.get(rc, ""), ""):
                             if register_user_service(nu, np, nf, rm[rc], nt): st.success("تم الإنشاء!")
                             else: st.error("المستخدم موجود")
                         else: st.error("الكود خاطئ")
@@ -282,7 +240,10 @@ else:
         final_menu.update(menu_options["common"])
         
         selection_key = st.sidebar.radio("القائمة:", list(final_menu.values()), label_visibility="collapsed")
-        selection = [k for k, v in final_menu.items() if v == selection_key][0]
+        try:
+            selection = [k for k, v in final_menu.items() if v == selection_key][0]
+        except:
+            selection = "أعمالي الشخصية"
 
         st.divider()
         if st.button("تسجيل الخروج"): 
