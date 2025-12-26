@@ -18,25 +18,37 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات
+# 2. إعدادات قاعدة البيانات (مؤمنة 🔐)
 # ==========================================
 
-RAW_PASS = "khalidcom_1981"
-DB_USER = "postgres.jecmwuiqofztficcujpe"
-DB_HOST = "aws-1-eu-west-2.pooler.supabase.com"
-DB_PORT = "6543"
-DB_NAME = "postgres"
+# التحقق من وجود الأسرار لتجنب انهيار التطبيق
+if "db" not in st.secrets:
+    st.error("❌ لم يتم العثور على بيانات الاتصال. يرجى إعداد Secrets في لوحة تحكم التطبيق.")
+    st.stop()
 
-encoded_password = urllib.parse.quote_plus(RAW_PASS)
-
-DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
-
+# قراءة البيانات من ملف الأسرار الآمن
 try:
+    db_config = st.secrets["db"]
+    RAW_PASS = db_config["password"]
+    DB_USER = db_config["user"]
+    DB_HOST = db_config["host"]
+    DB_PORT = db_config["port"]
+    DB_NAME = db_config["name"]
+
+    # تشفير كلمة المرور (لضمان سلامة الرابط مع الرموز الخاصة)
+    encoded_password = urllib.parse.quote_plus(RAW_PASS)
+
+    # بناء الرابط الكامل
+    DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
+
+    # إنشاء المحرك
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
+
 except Exception as e:
-    st.error(f"خطأ في الاتصال بقاعدة البيانات: {e}")
+    st.error(f"حدث خطأ أثناء قراءة بيانات الاتصال: {e}")
+    st.stop()
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -164,12 +176,11 @@ st.markdown("""
         text-align: right;
     }
     
-    /* العناوين العامة */
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Cairo', sans-serif !important;
         font-weight: 800;
         color: #1e3a8a;
-        text-align: right;
+        text-align: right !important;
     }
 
     .stMarkdown, .stText, p {
@@ -228,7 +239,7 @@ if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # ✅ هذا هو الجزء المسؤول عن التوسط (تم استخدام Flexbox)
+        # التوسط
         st.markdown("""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
             <div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>
@@ -278,7 +289,7 @@ if not st.session_state['logged_in']:
 else:
     user = st.session_state['user']
     with st.sidebar:
-        # ✅ توسيط اللوغو والعنوان في السايدبار أيضاً
+        # التوسط في السايدبار
         st.markdown("""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
             <div style="font-size: 40px;">🎓</div>
@@ -369,7 +380,7 @@ else:
             with col_main1: w_title = st.text_input("العنوان الكامل للعمل")
             with col_main2: w_date = st.date_input("تاريخ النشر / الإنجاز")
 
-            # ✅ فرض المحاذاة لليمين للنص الديناميكي
+            # ✅ محاذاة لليمين للنص الديناميكي
             st.markdown(f"<div style='text-align: right; direction: rtl; font-weight: bold;'>📄 تفاصيل خاصة بـ: {w_type}</div>", unsafe_allow_html=True)
             
             extra_data = {}
