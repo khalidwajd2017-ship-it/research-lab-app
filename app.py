@@ -26,7 +26,7 @@ DB_HOST = "localhost"
 DB_PORT = "5432"
 DB_NAME = "lab_db_v2" 
 
-DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = "postgresql://postgres:8?Q4.G/iLe84d-j@db.jecmwuiqofztficcujpe.supabase.co:5432/postgres"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -502,4 +502,5 @@ else:
             with st.container(border=True):
                 st.info(f"الاسم: {user['name']}")
                 st.info(f"الدور: {user['role']}")
+
                 st.info(f"الفرقة: {user['team']}")
