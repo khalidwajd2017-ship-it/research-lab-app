@@ -144,7 +144,7 @@ def get_works_dataframe():
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق (CSS) - RTL محسّن
+# 4. التنسيق (CSS) - RTL
 # ==========================================
 st.markdown("""
 <style>
@@ -156,7 +156,6 @@ st.markdown("""
         --text-color: #1e293b;
     }
 
-    /* تعويم الصفحة بالكامل لليمين */
     html, body, .stApp {
         font-family: 'Tajawal', sans-serif;
         direction: rtl; 
@@ -165,7 +164,7 @@ st.markdown("""
         text-align: right;
     }
     
-    /* ضبط العناوين العامة لليمين */
+    /* العناوين العامة */
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Cairo', sans-serif !important;
         font-weight: 800;
@@ -173,10 +172,9 @@ st.markdown("""
         text-align: right;
     }
 
-    /* إجبار نصوص الماركداون على اليمين */
     .stMarkdown, .stText, p {
-        text-align: right;
-        direction: rtl;
+        text-align: right !important;
+        direction: rtl !important;
     }
 
     /* إصلاح السايدبار */
@@ -204,7 +202,6 @@ st.markdown("""
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
     .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
     
-    /* الشريط الملون على اليمين */
     .kpi-card::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 0 12px 12px 0; }
     
     .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -214,7 +211,6 @@ st.markdown("""
 
     .stButton>button { font-family: 'Cairo', sans-serif !important; font-weight: 700; border-radius: 8px; height: 45px; }
     
-    /* محاذاة المدخلات */
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
     .stRadio { direction: rtl; text-align: right; }
 </style>
@@ -232,7 +228,15 @@ if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("""<div style="text-align: center; margin-bottom: 30px;"><div style="font-size: 60px;">🏛️</div><h1 style="color:#1e40af; font-family:'Cairo'; text-align:center !important;">بوابة البحث العلمي</h1><p style="color:#64748b; text-align:center !important;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
+        # ✅ هذا هو الجزء المسؤول عن التوسط (تم استخدام Flexbox)
+        st.markdown("""
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
+            <div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>
+            <h1 style="color:#1e40af; font-family:'Cairo'; font-weight: 800; margin: 0; text-align: center !important; width: 100%;">بوابة البحث العلمي</h1>
+            <p style="color:#64748b; font-family:'Tajawal'; font-size: 18px; margin-top: 5px; text-align: center !important; width: 100%;">نظام إدارة المخابر الجامعية الموحد</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
         with st.container(border=True):
             tab1, tab2 = st.tabs(["🔐 دخول الأعضاء", "✨ حساب جديد"])
             with tab1:
@@ -274,9 +278,9 @@ if not st.session_state['logged_in']:
 else:
     user = st.session_state['user']
     with st.sidebar:
-        # ✅ تعديل هنا: تم إضافة text-align: center !important لفرض التوسط في السايدبار
+        # ✅ توسيط اللوغو والعنوان في السايدبار أيضاً
         st.markdown("""
-        <div style="text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
             <div style="font-size: 40px;">🎓</div>
             <h3 style="margin: 5px 0 0 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">المركز البحثي أدرار</h3>
             <span style="font-size: 12px; color: #64748b; display: block; text-align: center !important;">منصة التميز البحثي</span>
@@ -365,7 +369,7 @@ else:
             with col_main1: w_title = st.text_input("العنوان الكامل للعمل")
             with col_main2: w_date = st.date_input("تاريخ النشر / الإنجاز")
 
-            # ✅ هنا قمت باستخدام HTML لفرض المحاذاة لليمين للنص الذي طلبته
+            # ✅ فرض المحاذاة لليمين للنص الديناميكي
             st.markdown(f"<div style='text-align: right; direction: rtl; font-weight: bold;'>📄 تفاصيل خاصة بـ: {w_type}</div>", unsafe_allow_html=True)
             
             extra_data = {}
