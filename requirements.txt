@@ -1,7 +1,6 @@
 streamlit
 pandas
 sqlalchemy
-psycopg2-binary
+pg8000
 bcrypt
 plotly
-python-docx
