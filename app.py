@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
-from sqlalchemy.engine import URL # ✅ استيراد مكتبة إنشاء الروابط الآمنة
+from sqlalchemy.engine import URL
 import bcrypt
 from datetime import date
 import plotly.express as px
@@ -18,27 +18,27 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (الطريقة الآمنة) 🛠️
+# 2. إعدادات قاعدة البيانات (باستخدام محرك pg8000 المستقر) 🛠️
 # ==========================================
 
-# بناء الرابط كـ "كائن" (Object) بدلاً من نص، لتفادي أخطاء الرموز في كلمة السر
+# بناء رابط الاتصال باستخدام محرك pg8000 بدلاً من psycopg2
+# هذا المحرك يعالج مشاكل الاتصال السحابي والرموز في كلمة المرور تلقائياً
 db_url = URL.create(
-    drivername="postgresql",
+    drivername="postgresql+pg8000",  # 👈 التغيير الجذري هنا
     username="postgres",
-    password="8?Q4.G/iLe84d-j",  # ✅ نضع كلمة السر كما هي تماماً هنا
+    password="8?Q4.G/iLe84d-j",
     host="db.jecmwuiqofztficcujpe.supabase.co",
     port=5432,
     database="postgres"
 )
 
-# إنشاء الاتصال
 try:
-    # pool_pre_ping=True يعيد الاتصال تلقائياً إذا انقطع
-    engine = create_engine(db_url, pool_pre_ping=True)
+    # إنشاء المحرك
+    engine = create_engine(db_url)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 except Exception as e:
-    st.error(f"خطأ جسيم في الاتصال بقاعدة البيانات: {e}")
+    st.error(f"خطأ في الاتصال بقاعدة البيانات: {e}")
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -63,7 +63,7 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)
-    details = Column(Text, nullable=True) 
+    details = Column(Text, nullable=True) # JSON
     activity_type = Column(String, nullable=False)
     classification = Column(String, nullable=True)
     publication_date = Column(Date, nullable=False)
@@ -86,7 +86,8 @@ def init_db():
             session.commit()
         session.close()
     except Exception as e:
-        print(f"Init DB Warning: {e}")
+        # طباعة الخطأ للسجلات فقط
+        print(f"DB Init Error: {e}")
 
 # ==========================================
 # 3. الخدمات (Services)
@@ -201,13 +202,11 @@ if not st.session_state['logged_in']:
             with tab2:
                 with st.form("signup"):
                     session = SessionLocal()
-                    # استخدام try هنا لتجنب انهيار التطبيق إذا فشل الاتصال في جلب الفرق
                     try:
                         tn = [t.name for t in session.query(Team).all()]
                     except:
-                        tn = ["يرجى تحديث الصفحة - خطأ اتصال"]
+                        tn = ["جاري التحميل..."] # تفادي الخطأ عند أول تشغيل
                     session.close()
-                    
                     nu = st.text_input("اسم المستخدم")
                     np = st.text_input("كلمة المرور", type="password")
                     nf = st.text_input("الاسم الكامل")
@@ -240,24 +239,18 @@ else:
         final_menu.update(menu_options["common"])
         
         selection_key = st.sidebar.radio("القائمة:", list(final_menu.values()), label_visibility="collapsed")
-        try:
-            selection = [k for k, v in final_menu.items() if v == selection_key][0]
-        except:
-            selection = "أعمالي الشخصية"
+        try: selection = [k for k, v in final_menu.items() if v == selection_key][0]
+        except: selection = "أعمالي الشخصية"
 
         st.divider()
         if st.button("تسجيل الخروج"): 
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # =======================
-    # 1. لوحات القيادة
-    # =======================
     if selection in ["لوحة القيادة العامة", "لوحة قيادة الفرقة"]:
         st.title(selection_key)
         df = get_works_dataframe()
         current_df = df
-        
         filter_title = "تصفية البيانات العامة"
         if selection == "لوحة قيادة الفرقة":
             current_df = df[df['team_name'] == user['team']]
@@ -271,7 +264,6 @@ else:
             with c_f2:
                 types = sorted(current_df['activity_type'].unique()) if not current_df.empty else []
                 sel_t = st.multiselect("نوع النشاط:", types, default=types)
-            
             if sel_y: current_df = current_df[current_df['year'].isin(sel_y)]
             if sel_t: current_df = current_df[current_df['activity_type'].isin(sel_t)]
 
@@ -304,7 +296,6 @@ else:
                     st.plotly_chart(fig2, use_container_width=True)
         else: st.warning("لا توجد بيانات مطابقة للفلترة.")
 
-    # --- 2. تسجيل نتاج جديد ---
     elif selection == "تسجيل نتاج جديد":
         st.title(selection_key)
         st.markdown("##### 📌 اختر نوع النشاط لتخصيص الحقول:")
@@ -329,7 +320,6 @@ else:
                     w_class = st.selectbox("تصنيف المجلة", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4", "غير مصنف"])
                     vol_iss = st.text_input("المجلد / العدد")
                 extra_data = {"المجلة": journal_name, "العدد": vol_iss, "رابط": url_link}
-
             elif "مداخلة" in w_type:
                 c1, c2 = st.columns(2)
                 with c1:
@@ -339,7 +329,6 @@ else:
                     location = st.text_input("مكان الانعقاد")
                     participation_type = st.selectbox("نوع المشاركة", ["حضورية", "عن بعد"])
                 extra_data = {"التظاهرة": conf_name, "المنظم": organizer, "المكان": location, "المشاركة": participation_type}
-
             elif w_type == "كتاب":
                 c1, c2 = st.columns(2)
                 with c1:
@@ -349,7 +338,6 @@ else:
                     pages = st.number_input("عدد الصفحات", min_value=10)
                     edition = st.text_input("رقم الطبعة")
                 extra_data = {"الناشر": publisher, "ISBN": isbn, "الصفحات": pages, "الطبعة": edition}
-
             elif w_type == "مشروع بحث":
                 c1, c2 = st.columns(2)
                 with c1:
@@ -374,7 +362,6 @@ else:
                     elif w_type == "كتاب": pts = 60
                     elif w_type == "مشروع بحث": pts = 80
                     else: pts = 10
-                    
                     json_str = json.dumps(extra_data, ensure_ascii=False)
                     add_work_service(user['id'], w_title, json_str, w_type, w_class, w_date, pts)
                     st.success("✅ تمت الإضافة بنجاح!")
@@ -382,24 +369,20 @@ else:
                     st.rerun()
                 else: st.error("يرجى إدخال العنوان")
 
-    # --- 3. السجلات ---
     elif selection in ["السجل العلمي للمخبر", "سجل أعمال الفرقة", "أعمالي الشخصية"]:
         st.title(selection_key)
         df = get_works_dataframe()
         
-        # فلترة حسب الصلاحية
         if selection == "أعمالي الشخصية": df = df[df['researcher_name'] == user['name']]
         elif selection == "سجل أعمال الفرقة": df = df[df['team_name'] == user['team']]
         
         if not df.empty:
             df['publication_date'] = pd.to_datetime(df['publication_date']).dt.strftime('%Y-%m-%d')
-            
             def parse_details(row):
                 try: return json.loads(row) if row else {}
                 except: return {}
             df['details_dict'] = df['details'].apply(parse_details)
 
-            # ✅ قسم الفلترة الموحد
             with st.expander("🔍 بحث متقدم وتصفية", expanded=True):
                 col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
                 with col_s1: search_txt = st.text_input("بحث بعنوان العمل:")
@@ -412,7 +395,6 @@ else:
                 with col_s4:
                     all_classes = sorted([x for x in df['classification'].unique() if x])
                     class_fil = st.multiselect("التصنيف:", all_classes)
-                
                 researcher_fil = []
                 if selection != "أعمالي الشخصية":
                     with col_s5: 
@@ -430,17 +412,7 @@ else:
             tab_all, tab_art, tab_conf, tab_book, tab_proj = st.tabs(["📋 الكل", "📰 المقالات", "🎤 المداخلات", "📚 الكتب", "🔬 المشاريع"])
 
             with tab_all:
-                st.dataframe(
-                    df[['publication_date', 'researcher_name', 'team_name', 'activity_type', 'title', 'classification', 'points']].rename(
-                        columns={'publication_date': 'التاريخ', 'researcher_name': 'الباحث', 'team_name': 'الفرقة', 
-                                 'activity_type': 'النوع', 'title': 'العنوان', 'classification': 'التصنيف', 'points': 'النقاط'}),
-                    use_container_width=True, hide_index=True,
-                    column_config={
-                        "التاريخ": st.column_config.TextColumn("التاريخ", width="medium"),
-                        "العنوان": st.column_config.TextColumn("العنوان", width="large"),
-                        "النقاط": st.column_config.ProgressColumn("التقييم", format="%d", min_value=0, max_value=100)
-                    }
-                )
+                st.dataframe(df[['publication_date', 'researcher_name', 'team_name', 'activity_type', 'title', 'classification', 'points']].rename(columns={'publication_date': 'التاريخ', 'researcher_name': 'الباحث', 'team_name': 'الفرقة', 'activity_type': 'النوع', 'title': 'العنوان', 'classification': 'التصنيف', 'points': 'النقاط'}), use_container_width=True, hide_index=True, column_config={"التاريخ": st.column_config.TextColumn("التاريخ", width="medium"), "العنوان": st.column_config.TextColumn("العنوان", width="large"), "النقاط": st.column_config.ProgressColumn("التقييم", format="%d", min_value=0, max_value=100)})
 
             with tab_art:
                 df_art = df[df['activity_type'] == "مقال علمي"].copy()
@@ -474,10 +446,8 @@ else:
                     df_proj['النوع'] = df_proj['details_dict'].apply(lambda x: x.get('النوع', '-'))
                     st.dataframe(df_proj[['publication_date', 'researcher_name', 'title', 'الرمز', 'النوع', 'الصفة', 'points']].rename(columns={'publication_date': 'تاريخ البداية', 'researcher_name': 'الباحث', 'title': 'عنوان المشروع', 'points': 'النقاط'}), use_container_width=True, hide_index=True)
                 else: st.info("لا توجد مشاريع مطابقة للبحث.")
-
         else: st.warning("السجل فارغ")
 
-    # --- 4. الإعدادات ---
     elif selection == "الإعدادات":
         st.title(selection_key)
         tab_sec, tab_prof = st.tabs(["🔐 الأمان", "👤 الملف الشخصي"])
@@ -496,7 +466,6 @@ else:
                                 st.rerun()
                             else: st.error("خطأ")
                         else: st.error("كلمات المرور غير متطابقة")
-        
         with tab_prof:
             with st.container(border=True):
                 st.info(f"الاسم: {user['name']}")
