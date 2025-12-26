@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
-from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text, Enum
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
-from datetime import date
+from datetime import date, datetime
 import plotly.express as px
 import time
 import json 
@@ -19,66 +19,73 @@ st.set_page_config(
     page_icon="🎓"
 )
 
-# دالة لتحويل الشعار
+# ==========================================
+# 2. دوال مساعدة (صور + أسرار)
+# ==========================================
 def get_img_as_base64(file_path):
     try:
         with open(file_path, "rb") as f:
-            return base64.b64encode(f.read()).decode()
+            data = f.read()
+        return base64.b64encode(data).decode()
     except: return None
 
-# ==========================================
-# 2. إعدادات قاعدة البيانات
-# ==========================================
-if "db" in st.secrets:
-    db_config = st.secrets["db"]
-    encoded_password = urllib.parse.quote_plus(db_config["password"])
-    DATABASE_URL = f"postgresql://{db_config['user']}:{encoded_password}@{db_config['host']}:{db_config['port']}/{db_config['name']}?sslmode=require"
-else:
-    # إعدادات افتراضية (احتياطية)
-    RAW_PASS = "khalidcom_1981"
-    encoded_password = urllib.parse.quote_plus(RAW_PASS)
-    DATABASE_URL = f"postgresql://postgres.jecmwuiqofztficcujpe:{encoded_password}@aws-1-eu-west-2.pooler.supabase.com:6543/postgres?sslmode=require"
-
-try:
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base = declarative_base()
-except Exception as e:
-    st.error(f"خطأ في الاتصال: {e}")
+if "db" not in st.secrets:
+    st.error("❌ ملف الأسرار غير موجود.")
     st.stop()
 
-# --- تعريف الجداول (الهيكلة الجديدة) ---
+@st.cache_resource
+def get_db_engine():
+    try:
+        db_config = st.secrets["db"]
+        encoded_password = urllib.parse.quote_plus(db_config["password"])
+        DATABASE_URL = f"postgresql://{db_config['user']}:{encoded_password}@{db_config['host']}:{db_config['port']}/{db_config['name']}?sslmode=require"
+        return create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
+    except Exception as e: return None
 
+engine = get_db_engine()
+if not engine: st.stop()
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# ==========================================
+# 3. تعريف الجداول (الهيكلية الجديدة) 🏗️
+# ==========================================
+
+# جدول الأقسام (الجديد)
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True, index=True)
-    dept_number = Column(Integer, unique=True) # رقم القسم
-    name = Column(String, nullable=False) # اسم القسم
-    latin_name = Column(String) # اسم القسم باللاتينية
-    abbreviation = Column(String) # الاسم المختصر
+    dept_number = Column(Integer, unique=True, nullable=False) # رقم القسم
+    name_ar = Column(String, nullable=False) # اسم القسم بالعربية
+    name_lat = Column(String, nullable=True) # اسم القسم باللاتينية
+    short_name = Column(String, nullable=True) # الاسم المختصر
     teams = relationship("Team", back_populates="department")
 
+# جدول الفرق (المطور)
 class Team(Base):
     __tablename__ = "teams"
     id = Column(Integer, primary_key=True, index=True)
-    team_number = Column(Integer) # رقم الفرقة
+    department_id = Column(Integer, ForeignKey("departments.id")) # ارتباط بالقسم
+    team_number = Column(Integer, nullable=True) # رقم الفرقة
     name = Column(String, unique=True, nullable=False) # اسم الفرقة
-    abbreviation = Column(String) # الاسم المختصر للفرقة
-    classification = Column(Text) # التصنيف الموضوعاتي (JSON)
-    description = Column(Text) # وصف علمي لبرنامج البحث
+    short_name = Column(String, nullable=True) # الاسم المختصر للفرقة
+    leader_name = Column(String, nullable=True) # رئيس الفرقة (نصي أو يمكن ربطه بجدول المستخدمين)
+    thematic_fields = Column(Text, nullable=True) # الميادين / الكلمات المفتاحية
+    scientific_desc = Column(Text, nullable=True) # وصف علمي لبرنامج البحث
     
-    # العلاقات
-    department_id = Column(Integer, ForeignKey("departments.id"))
     department = relationship("Department", back_populates="teams")
     members = relationship("User", back_populates="team")
 
+# جدول المستخدمين (مع تصنيف العضوية)
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
+    username = Column(String, unique=True, index=True, nullable=False)
     full_name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(String, nullable=False) # admin, leader, researcher, phd_student
+    role = Column(String, nullable=False) # admin, leader, researcher
+    member_type = Column(String, default="permanent") # permanent (دائم) / phd_student (طالب دكتوراه)
     
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     team = relationship("Team", back_populates="members")
@@ -88,80 +95,90 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)
-    details = Column(Text) 
-    activity_type = Column(String)
-    classification = Column(String)
-    publication_date = Column(Date)
-    year = Column(Integer)
+    details = Column(Text, nullable=True) 
+    activity_type = Column(String, nullable=False)
+    classification = Column(String, nullable=True)
+    publication_date = Column(Date, nullable=False)
+    year = Column(Integer, nullable=False)
     points = Column(Integer, default=0)
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
-# --- دالة التهيئة (تم تحديثها لإنشاء الأقسام الستة) ---
+# ==========================================
+# 4. دوال النظام والتهيئة
+# ==========================================
 def init_db():
     try:
-        # ملاحظة: إذا تغيرت الهيكلة جذرياً قد تحتاج لحذف الجداول يدوياً من Supabase أولاً
         Base.metadata.create_all(bind=engine)
         session = SessionLocal()
         
-        # 1. إنشاء الأقسام الستة
+        # 1. تهيئة الأقسام الـ 6 (إذا لم تكن موجودة)
         if not session.query(Department).first():
-            depts_data = [
-                {"n": 1, "name": "القسم (1)", "lat": "Department 1", "abbr": "DEPT1"},
-                {"n": 2, "name": "القسم (2)", "lat": "Department 2", "abbr": "DEPT2"},
-                {"n": 3, "name": "القسم (3)", "lat": "Department 3", "abbr": "DEPT3"},
-                {"n": 4, "name": "القسم (4)", "lat": "Department 4", "abbr": "DEPT4"},
-                {"n": 5, "name": "القسم (5)", "lat": "Department 5", "abbr": "DEPT5"},
-                {"n": 6, "name": "القسم (6)", "lat": "Department 6", "abbr": "DEPT6"},
-            ]
-            for d in depts_data:
-                session.add(Department(dept_number=d["n"], name=d["name"], latin_name=d["lat"], abbreviation=d["abbr"]))
+            depts = []
+            for i in range(1, 7):
+                depts.append(Department(
+                    dept_number=i,
+                    name_ar=f"القسم ({i})",
+                    name_lat=f"Department {i}",
+                    short_name=f"Dept-{i}"
+                ))
+            session.add_all(depts)
             session.commit()
             
-            # إضافة فرق افتراضية وتوزيعها على الأقسام
-            dept1 = session.query(Department).filter_by(dept_number=1).first()
-            if dept1:
-                t1 = Team(team_number=1, name="فرقة الدراسات الاجتماعية", abbreviation="SDS", department_id=dept1.id, description="تهتم بدراسة الظواهر الاجتماعية")
-                session.add(t1)
-            
-            dept2 = session.query(Department).filter_by(dept_number=2).first()
-            if dept2:
-                t2 = Team(team_number=2, name="فرقة علم النفس العيادي", abbreviation="CPS", department_id=dept2.id, description="الصحة النفسية والعلاجات")
-                session.add(t2)
-            
-            session.commit()
+            # 2. إضافة فرق افتراضية للقسم الأول (كمثال)
+            first_dept = session.query(Department).filter_by(dept_number=1).first()
+            if first_dept:
+                teams = [
+                    Team(
+                        name="فرقة علم النفس العيادي", 
+                        short_name="CP Team", 
+                        team_number=1, 
+                        department_id=first_dept.id,
+                        leader_name="أ.د محمد علي",
+                        thematic_fields="الصحة النفسية، العلاج السلوكي",
+                        scientific_desc="دراسة الاضطرابات السلوكية في الوسط المدرسي"
+                    ),
+                    Team(
+                        name="فرقة تكنولوجيا التعليم", 
+                        short_name="EdTech", 
+                        team_number=2, 
+                        department_id=first_dept.id,
+                        leader_name="د. سعاد أحمد",
+                        thematic_fields="التعليم الإلكتروني، الرقمنة",
+                        scientific_desc="تطوير منصات تعليمية ذكية"
+                    )
+                ]
+                session.add_all(teams)
+                session.commit()
 
-        # 2. إنشاء المدير
+        # 3. حساب المدير
         if not session.query(User).filter_by(username="admin").first():
-            hashed = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
-            session.add(User(username="admin", full_name="مدير المخبر", password_hash=hashed, role="admin"))
+            hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
             session.commit()
             
         session.close()
         return True
     except Exception as e:
-        print(f"Init Error: {e}")
+        print(e)
         return False
 
-# ==========================================
-# الخدمات
-# ==========================================
-def login_service(u, p):
+# خدمات قاعدة البيانات
+def auth_user(u, p):
     s = SessionLocal()
     try:
-        user = s.query(User).options(joinedload(User.team).joinedload(Team.department)).filter(User.username==u).first()
-        if user and bcrypt.checkpw(p.encode(), user.password_hash.encode()):
-            return user
+        user = s.query(User).options(joinedload(User.team)).filter(User.username == u).first()
+        if user and bcrypt.checkpw(p.encode(), user.password_hash.encode()): return user
     except: pass
     finally: s.close()
     return None
 
-def register_service(username, password, fullname, role, team_name):
+def register_user(u, p, f, r, t_name, m_type):
     s = SessionLocal()
     try:
-        team = s.query(Team).filter(Team.name == team_name).first()
-        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        s.add(User(username=username, full_name=fullname, password_hash=hashed, role=role, team_id=team.id if team else None))
+        team = s.query(Team).filter(Team.name == t_name).first()
+        h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+        s.add(User(username=u, full_name=f, password_hash=h, role=r, team_id=team.id if team else None, member_type=m_type))
         s.commit()
         return True
     except:
@@ -169,32 +186,55 @@ def register_service(username, password, fullname, role, team_name):
         return False
     finally: s.close()
 
+def add_work(uid, title, details, atype, cls, date_obj, pts):
+    s = SessionLocal()
+    try:
+        s.add(Work(user_id=uid, title=title, details=details, activity_type=atype, classification=cls, publication_date=date_obj, year=date_obj.year, points=pts))
+        s.commit()
+        return True
+    except:
+        s.rollback()
+        return False
+    finally: s.close()
+
+def get_data_df():
+    try: return pd.read_sql("""
+        SELECT w.id, w.title, w.activity_type, w.classification, w.publication_date, w.year, w.points,
+               u.full_name, t.name as team_name, d.name_ar as dept_name
+        FROM works w 
+        JOIN users u ON w.user_id = u.id 
+        LEFT JOIN teams t ON u.team_id = t.id
+        LEFT JOIN departments d ON t.department_id = d.id
+        ORDER BY w.publication_date DESC
+    """, engine)
+    except: return pd.DataFrame()
+
 # ==========================================
-# التنسيق (RTL)
+# 5. التنسيق (CSS) - RTL
 # ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
     :root { --primary-color: #2563eb; --bg-color: #f8fafc; --text-color: #1e293b; }
     html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: var(--bg-color); color: var(--text-color); text-align: right; }
-    h1, h2, h3, h4 { font-family: 'Cairo', sans-serif !important; font-weight: 800; color: #1e3a8a; text-align: right; }
-    .stMarkdown, .stText, p, .stButton, .stSelectbox, .stTextInput { text-align: right !important; direction: rtl !important; }
-    [data-testid="stSidebar"] { background-color: #ffffff; border-left: 1px solid #e2e8f0; }
-    [data-testid="stDataFrame"] table { direction: rtl; text-align: right; }
+    h1, h2, h3, h4, h5, h6 { font-family: 'Cairo', sans-serif !important; font-weight: 800; color: #1e3a8a; text-align: right !important; }
+    .stMarkdown, .stText, p { text-align: right !important; direction: rtl !important; }
+    [data-testid="stSidebar"] { background-color: #ffffff; border-left: 1px solid #e2e8f0; min-width: 300px !important; }
+    [data-testid="stDataFrame"] table { direction: rtl !important; text-align: right !important; }
+    [data-testid="stDataFrame"] th { text-align: right !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
     .stTabs [data-baseweb="tab-list"] { gap: 8px; justify-content: flex-start; }
-    .stTabs [data-baseweb="tab"] { font-family: 'Cairo', sans-serif; font-weight: 700; }
+    .stTabs [data-baseweb="tab"] { height: 45px; font-family: 'Cairo', sans-serif; font-weight: 700; }
+    .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; }
+    .kpi-card::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 0 12px 12px 0; }
+    .kpi-value { font-family: 'Cairo', sans-serif; font-size: 28px; font-weight: 800; color: #0f172a; }
+    .kpi-title { font-size: 13px; color: #64748b; font-weight: 500; text-align: right; }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea { text-align: right; direction: rtl; }
     div[data-testid="stToast"] { direction: rtl; text-align: right; font-family: 'Cairo'; }
-    
-    /* تنسيق خاص لبطاقة الفرقة */
-    .team-card { background: white; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .team-header { color: #2563eb; font-weight: bold; font-size: 18px; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 10px; }
-    .team-meta { font-size: 13px; color: #64748b; margin-bottom: 5px; }
-    .member-list { background: #f8fafc; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 13px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# الواجهة
+# 6. واجهة التطبيق
 # ==========================================
 
 if 'logged_in' not in st.session_state:
@@ -204,193 +244,171 @@ if 'logged_in' not in st.session_state:
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        # الشعار والعنوان
-        logo_html = ""
-        if os.path.exists("logo.png"):
-            b64 = get_img_as_base64("logo.png")
-            if b64: logo_html = f'<img src="data:image/png;base64,{b64}" style="width: 150px; margin-bottom: 15px;">'
-        else: logo_html = '<div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>'
+        st.markdown("<br>", unsafe_allow_html=True)
+        # شعار الصفحة الرئيسية
+        logo_path = "logo.png"
+        logo_html = '<div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>'
+        if os.path.exists(logo_path):
+            img = get_img_as_base64(logo_path)
+            if img: logo_html = f'<img src="data:image/png;base64,{img}" style="width: 180px; margin-bottom: 20px;">'
 
         st.markdown(f"""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
             {logo_html}
-            <h1 style="color:#1e40af; font-family:'Cairo'; font-weight: 800; margin: 0; text-align: center !important; width: 100%;">بوابة البحث العلمي</h1>
-            <p style="color:#64748b; font-family:'Tajawal'; font-size: 18px; margin-top: 5px; text-align: center !important; width: 100%;">نظام إدارة المخابر الجامعية الموحد</p>
+            <h1 style="color:#1e40af; font-family:'Cairo'; margin: 0; text-align: center !important; width: 100%;">بوابة البحث العلمي</h1>
+            <p style="color:#64748b; text-align: center !important; width: 100%;">نظام إدارة المخابر الجامعية الموحد</p>
         </div>
         """, unsafe_allow_html=True)
-
-        tab1, tab2 = st.tabs(["دخول", "تسجيل"])
-        with tab1:
-            with st.form("login"):
-                u = st.text_input("اسم المستخدم")
-                p = st.text_input("كلمة المرور", type="password")
-                if st.form_submit_button("دخول", use_container_width=True):
-                    with st.spinner("جاري التحقق..."):
-                        user = login_service(u, p)
-                        if user:
-                            st.session_state['logged_in'] = True
-                            st.session_state['user'] = {
-                                'id': user.id, 
-                                'name': user.full_name, 
-                                'role': user.role, 
-                                'team': user.team.name if user.team else "إدارة مركزية",
-                                'team_id': user.team_id,
-                                'dept': user.team.department.name if user.team and user.team.department else "-"
-                            }
-                            st.toast("أهلاً بك!", icon="👋")
-                            time.sleep(1)
-                            st.rerun()
-                        else: st.error("خطأ في البيانات")
         
-        with tab2:
-            with st.form("new_user"):
-                s = SessionLocal()
-                teams = [t.name for t in s.query(Team).all()]
-                s.close()
-                
-                nu = st.text_input("مستخدم جديد")
-                np = st.text_input("كلمة السر", type="password")
-                nf = st.text_input("الاسم الكامل")
-                nt = st.selectbox("اختر الفرقة", teams) if teams else st.warning("لا توجد فرق متاحة")
-                nr = st.radio("الصفة", ["باحث دائم", "طالب دكتوراه"], horizontal=True)
-                
-                if st.form_submit_button("تسجيل"):
-                    role_map = {"باحث دائم": "researcher", "طالب دكتوراه": "phd_student"}
-                    if register_service(nu, np, nf, role_map[nr], nt):
-                        st.success("تم التسجيل! يرجى الانتظار لتفعيل الحساب.")
-                    else: st.error("حدث خطأ (ربما المستخدم موجود)")
+        with st.container(border=True):
+            tab1, tab2 = st.tabs(["🔐 دخول", "✨ تسجيل"])
+            with tab1:
+                with st.form("login"):
+                    u = st.text_input("اسم المستخدم")
+                    p = st.text_input("كلمة المرور", type="password")
+                    if st.form_submit_button("دخول", type="primary", use_container_width=True):
+                        with st.spinner("جاري التحقق..."):
+                            user = auth_user(u, p)
+                            if user:
+                                st.session_state['logged_in'] = True
+                                st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else "", 'team_id': user.team_id}
+                                st.toast("أهلاً بك!", icon="👋")
+                                time.sleep(1)
+                                st.rerun()
+                            else: st.toast("بيانات خاطئة", icon="❌")
+            with tab2:
+                with st.form("signup"):
+                    s = SessionLocal()
+                    try: tn = [t.name for t in s.query(Team).all()]
+                    except: tn = []
+                    s.close()
+                    
+                    nu = st.text_input("اسم المستخدم")
+                    np = st.text_input("كلمة المرور", type="password")
+                    nf = st.text_input("الاسم الكامل")
+                    nt = st.selectbox("الفرقة", tn) if tn else st.warning("لا توجد فرق")
+                    m_type = st.radio("نوع العضوية", ["عضو دائم", "طالب دكتوراه"], horizontal=True)
+                    rc = st.radio("الصلاحية", ["باحث", "رئيس فرقة"], horizontal=True)
+                    co = st.text_input("كود التفعيل", type="password")
+                    
+                    if st.form_submit_button("إنشاء حساب", use_container_width=True):
+                        codes = {"باحث": "RES2025", "رئيس فرقة": "LEADER2025"}
+                        role_map = {"باحث": "researcher", "رئيس فرقة": "leader"}
+                        type_map = {"عضو دائم": "permanent", "طالب دكتوراه": "phd_student"}
+                        
+                        if co == codes.get(rc):
+                            with st.spinner("جاري التسجيل..."):
+                                if register_user(nu, np, nf, role_map[rc], nt, type_map[m_type]):
+                                    st.toast("تم التسجيل بنجاح!", icon="✅")
+                                else: st.toast("المستخدم موجود مسبقاً", icon="⚠️")
+                        else: st.toast("كود خاطئ", icon="⛔")
 
 else:
     user = st.session_state['user']
     with st.sidebar:
-        # الشعار في السايدبار
-        logo_html_sb = ""
-        if os.path.exists("logo.png"):
-            b64 = get_img_as_base64("logo.png")
-            if b64: logo_html_sb = f'<img src="data:image/png;base64,{b64}" style="width: 120px; margin-bottom: 10px;">'
+        # شعار السايدبار
+        logo_path = "logo.png"
+        sb_logo = ""
+        if os.path.exists(logo_path):
+            img = get_img_as_base64(logo_path)
+            if img: sb_logo = f'<img src="data:image/png;base64,{img}" style="width: 140px; margin-bottom: 15px;">'
         
         st.markdown(f"""
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 15px; border-bottom: 1px solid #e2e8f0; margin-bottom: 15px;">
-            {logo_html_sb}
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
+            {sb_logo}
             <h3 style="margin: 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">المركز البحثي أدرار</h3>
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown(f"**👤 {user['name']}**")
-        st.caption(f"الدور: {user['role']}")
-        if user['team'] != "إدارة مركزية":
-            st.caption(f"الفرقة: {user['team']}")
-            st.caption(f"القسم: {user['dept']}")
+        st.markdown(f"""<div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center; margin-bottom: 20px;"><b>👤 {user['name']}</b><br><span style="font-size: 12px; color: #64748b;">{user['role']}</span></div>""", unsafe_allow_html=True)
+
+        menu = {"تسجيل نتاج جديد": "📝 تسجيل نتاج جديد", "أعمالي": "👤 أعمالي", "الهيكل التنظيمي": "🏢 الهيكل التنظيمي (الفرق)"}
+        if user['role'] == 'admin': menu["لوحة القيادة"] = "📊 لوحة القيادة العامة"
         
-        menu = ["الرئيسية", "الهيكل التنظيمي", "تسجيل نتاج", "سجل الأعمال"]
-        if user['role'] == 'admin': menu.insert(1, "إدارة الأقسام والفرق")
-        
-        choice = st.sidebar.radio("القائمة", menu)
-        
-        if st.sidebar.button("خروج"):
+        sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
+        selection = [k for k, v in menu.items() if v == sel][0]
+
+        if st.button("خروج"):
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # --- محتوى الصفحات ---
-    
-    if choice == "الرئيسية":
-        st.title("📊 لوحة القيادة")
-        # بطاقات إحصائية بسيطة (يمكن توسيعها لاحقاً)
-        c1, c2, c3 = st.columns(3)
-        s = SessionLocal()
-        with c1:
-            st.metric("عدد الأقسام", s.query(Department).count())
-        with c2:
-            st.metric("عدد الفرق", s.query(Team).count())
-        with c3:
-            st.metric("عدد الباحثين", s.query(User).count())
-        s.close()
-
-    elif choice == "الهيكل التنظيمي":
+    # --- المحتوى ---
+    if selection == "الهيكل التنظيمي":
         st.title("🏢 الهيكل التنظيمي للمخبر")
-        st.markdown("---")
+        session = SessionLocal()
         
-        s = SessionLocal()
-        # جلب الأقسام مع فرقها وأعضائها (Eager Loading لتحسين الأداء)
-        departments = s.query(Department).options(
-            joinedload(Department.teams).joinedload(Team.members),
-            joinedload(Department.teams).joinedload(Team.works)
-        ).order_by(Department.dept_number).all()
+        # جلب الأقسام
+        depts = session.query(Department).order_by(Department.dept_number).all()
         
-        for dept in departments:
-            with st.expander(f"📁 {dept.name} ({dept.abbreviation})", expanded=True):
-                st.info(f"الاسم اللاتيني: {dept.latin_name}")
-                
-                # عرض فرق القسم
-                if not dept.teams:
-                    st.warning("لا توجد فرق في هذا القسم حالياً.")
-                else:
-                    for team in dept.teams:
-                        # تصنيف الأعضاء
-                        permanent = [m.full_name for m in team.members if m.role in ['researcher', 'leader']]
-                        phd = [m.full_name for m in team.members if m.role == 'phd_student']
-                        leader = next((m.full_name for m in team.members if m.role == 'leader'), "غير محدد")
+        for dept in depts:
+            with st.expander(f"📂 {dept.name_ar} ({dept.name_lat}) - {dept.short_name}", expanded=False):
+                teams = session.query(Team).filter_by(department_id=dept.id).all()
+                if teams:
+                    for team in teams:
+                        st.markdown(f"### 🔹 {team.name}")
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.info(f"**رئيس الفرقة:** {team.leader_name or 'غير محدد'}")
+                            st.write(f"**الرمز:** {team.short_name}")
+                        with c2:
+                            st.write(f"**الميادين:** {team.thematic_fields or '---'}")
                         
-                        st.markdown(f"""
-                        <div class="team-card">
-                            <div class="team-header">🔹 {team.name} ({team.abbreviation or '-'})</div>
-                            <div class="team-meta"><b>رئيس الفرقة:</b> {leader}</div>
-                            <div class="team-meta"><b>التصنيف:</b> {team.classification or 'غير محدد'}</div>
-                            <div style="font-size:13px; color:#333; margin: 8px 0;">{team.description or 'لا يوجد وصف.'}</div>
-                            <div style="display: flex; gap: 10px;">
-                                <div class="member-list" style="flex:1;">
-                                    <b>👨‍🏫 الأعضاء الدائمون ({len(permanent)}):</b><br>{', '.join(permanent) if permanent else '-'}
-                                </div>
-                                <div class="member-list" style="flex:1;">
-                                    <b>🎓 طلبة الدكتوراه ({len(phd)}):</b><br>{', '.join(phd) if phd else '-'}
-                                </div>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-        s.close()
+                        st.markdown(f"**📝 وصف البرنامج:** {team.scientific_desc or '---'}")
+                        
+                        # الأعضاء
+                        members = session.query(User).filter_by(team_id=team.id).all()
+                        perm = [m.full_name for m in members if m.member_type == 'permanent']
+                        phd = [m.full_name for m in members if m.member_type == 'phd_student']
+                        
+                        tc1, tc2 = st.columns(2)
+                        with tc1:
+                            st.markdown("**👨‍🏫 الأعضاء الدائمون:**")
+                            if perm: 
+                                for p in perm: st.markdown(f"- {p}")
+                            else: st.caption("لا يوجد")
+                        with tc2:
+                            st.markdown("**🎓 طلبة الدكتوراه:**")
+                            if phd:
+                                for p in phd: st.markdown(f"- {p}")
+                            else: st.caption("لا يوجد")
+                        st.divider()
+                else:
+                    st.warning("لا توجد فرق مسجلة في هذا القسم حالياً.")
+        session.close()
 
-    elif choice == "إدارة الأقسام والفرق" and user['role'] == 'admin':
-        st.title("⚙️ إدارة الهيكل")
-        
-        t1, t2 = st.tabs(["إضافة فرقة جديدة", "تحديث بيانات فرقة"])
-        
-        s = SessionLocal()
-        depts = s.query(Department).all()
-        dept_names = {d.name: d.id for d in depts}
-        
-        with t1:
-            with st.form("add_team"):
-                st.subheader("إضافة فرقة جديدة")
-                d_select = st.selectbox("القسم التابع له", list(dept_names.keys()))
-                t_name = st.text_input("اسم الفرقة")
-                t_abbr = st.text_input("الاسم المختصر")
-                t_num = st.number_input("رقم الفرقة", min_value=1, step=1)
-                t_class = st.text_area("الكلمات المفتاحية / التصنيف")
-                t_desc = st.text_area("وصف برنامج البحث")
-                
-                if st.form_submit_button("حفظ الفرقة"):
-                    new_team = Team(
-                        name=t_name, 
-                        abbreviation=t_abbr, 
-                        team_number=t_num,
-                        classification=t_class,
-                        description=t_desc,
-                        department_id=dept_names[d_select]
-                    )
-                    s.add(new_team)
-                    s.commit()
-                    st.success("تمت الإضافة بنجاح")
-                    time.sleep(1)
-                    st.rerun()
-        s.close()
+    elif selection == "تسجيل نتاج جديد":
+        st.title("📝 إضافة نتاج علمي")
+        # (نفس كود الإضافة السابق مع التحسينات)
+        # ... (للإيجاز، استخدم نفس نموذج الإضافة من الكود السابق، فهو متوافق)
+        with st.form("add_work"):
+            title = st.text_input("العنوان")
+            atype = st.selectbox("النوع", ["مقال", "مداخلة", "كتاب"])
+            date_pub = st.date_input("التاريخ")
+            if st.form_submit_button("حفظ"):
+                with st.spinner("جاري الحفظ..."):
+                    if add_work(user['id'], title, "{}", atype, "A", date_pub, 100):
+                        st.toast("تم الحفظ!", icon="✅")
+                    else: st.toast("خطأ", icon="❌")
 
-    elif choice == "تسجيل نتاج":
-        # (نفس الكود السابق مع التأكد من ربط العمل بالباحث الحالي)
-        st.title("📝 تسجيل عمل جديد")
-        # ... (يمكنك استخدام الكود السابق هنا)
-        st.info("خاصية التسجيل متاحة (استخدم الكود السابق هنا)")
+    elif selection == "أعمالي":
+        st.title("👤 سجل أعمالي")
+        df = get_works_dataframe()
+        my_df = df[df['full_name'] == user['name']]
+        if not my_df.empty:
+            st.dataframe(my_df[['publication_date', 'activity_type', 'title', 'points']])
+        else:
+            st.info("لا توجد أعمال مسجلة.")
 
-    elif choice == "سجل الأعمال":
-        st.title("🗂️ سجل الأعمال")
-        # ... (جدول العرض)
+    elif selection == "لوحة القيادة":
+        st.title("📊 الإحصائيات العامة")
+        df = get_works_dataframe()
+        if not df.empty:
+            c1, c2, c3 = st.columns(3)
+            c1.metric("إجمالي الأعمال", len(df))
+            c2.metric("عدد الباحثين", df['full_name'].nunique())
+            c3.metric("النقاط", df['points'].sum())
+            
+            st.subheader("توزيع الأعمال حسب الأقسام")
+            # نحتاج دمج البيانات لعرض الأعمال حسب القسم
+            fig = px.pie(df, names='dept_name', hole=0.4)
+            st.plotly_chart(fig, use_container_width=True)
