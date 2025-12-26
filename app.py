@@ -8,8 +8,7 @@ from datetime import date
 import plotly.express as px
 import time
 import json 
-import urllib.parse 
-import socket # ✅ مكتبة الشبكات لحل مشكلة الاتصال
+import urllib.parse # مكتبة ضرورية لتصحيح كلمة المرور
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -20,38 +19,29 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (الحل الجذري للاتصال السحابي) 🛠️
+# 2. إعدادات قاعدة البيانات (الحل الصحيح)
 # ==========================================
 
-# بيانات الاتصال الخاصة بك
-RAW_DB_PASS = "8?Q4.G/iLe84d-j"
+# 1. تعريف المتغيرات بشكل منفصل لتجنب أخطاء الرموز
+DB_USER = "postgres"
+RAW_PASS = "8?Q4.G/iLe84d-j"  # كلمة مرورك كما هي
 DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
+DB_PORT = "5432"
 DB_NAME = "postgres"
 
-# 1. تشفير كلمة المرور (لمعالجة الرموز الخاصة)
-encoded_password = urllib.parse.quote_plus(RAW_DB_PASS)
+# 2. تشفير كلمة المرور (تحويل ? و / إلى رموز آمنة للرابط)
+encoded_password = urllib.parse.quote_plus(RAW_PASS)
 
-# 2. ✅ دالة سحرية: تجبر النظام على استخدام IPv4 فقط لتفادي أخطاء Streamlit Cloud
-def get_connection_url():
-    try:
-        # محاولة الحصول على عنوان IP الرقمي (IPv4)
-        ip_address = socket.gethostbyname(DB_HOST)
-        # تكوين الرابط باستخدام IP المباشر
-        return f"postgresql://postgres:{encoded_password}@{ip_address}:5432/{DB_NAME}"
-    except Exception as e:
-        # في حال الفشل، نعود للرابط العادي
-        return f"postgresql://postgres:{encoded_password}@{DB_HOST}:5432/{DB_NAME}"
+# 3. بناء الرابط بشكل سليم
+DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# الحصول على الرابط الآمن
-DATABASE_URL = get_connection_url()
-
-# إنشاء الاتصال
+# 4. إنشاء الاتصال مع فرض وضع الأمان SSL
 try:
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(DATABASE_URL, connect_args={"sslmode": "require"})
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 except Exception as e:
-    st.error(f"فشل الاتصال بقاعدة البيانات. الخطأ: {e}")
+    st.error(f"خطأ في إعدادات الاتصال: {e}")
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -76,7 +66,7 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)
-    details = Column(Text, nullable=True) 
+    details = Column(Text, nullable=True) # JSON
     activity_type = Column(String, nullable=False)
     classification = Column(String, nullable=True)
     publication_date = Column(Date, nullable=False)
@@ -99,8 +89,8 @@ def init_db():
             session.commit()
         session.close()
     except Exception as e:
-        # عرض الخطأ فقط في حالة التطوير، يمكن إخفاؤه لاحقاً
-        print(f"Init Info: {e}")
+        # طباعة الخطأ فقط في السجلات (Logs) وليس للمستخدم
+        print(f"Database Initialization Error: {e}")
 
 # ==========================================
 # 3. الخدمات (Services)
