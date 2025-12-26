@@ -316,7 +316,7 @@ else:
     if selection in ["لوحة القيادة العامة", "لوحة قيادة الفرقة"]:
         # ✅ التعديل هنا: إضافة اسم الفرقة إلى العنوان إذا كانت لوحة قيادة الفرقة
         if selection == "لوحة قيادة الفرقة":
-            st.title(f"{selection_key}: {user['team']}")
+            st.title(f"📈 {selection_key}: {user['team']}")
         else:
             st.title(selection_key)
 
@@ -552,4 +552,3 @@ else:
                 st.info(f"الاسم: {user['name']}")
                 st.info(f"الدور: {user['role']}")
                 st.info(f"الفرقة: {user['team']}")
-
