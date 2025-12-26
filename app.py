@@ -23,25 +23,27 @@ st.set_page_config(
 # 2. إعدادات قاعدة البيانات (الحل الجذري للاتصال السحابي) 🛠️
 # ==========================================
 
+# بيانات الاتصال الخاصة بك
 RAW_DB_PASS = "8?Q4.G/iLe84d-j"
-encoded_password = urllib.parse.quote_plus(RAW_DB_PASS)
-
 DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
 DB_NAME = "postgres"
 
-# ✅ دالة سحرية: تجبر النظام على استخدام IPv4 فقط
-def get_ipv4_url(host, password, db_name):
+# 1. تشفير كلمة المرور (لمعالجة الرموز الخاصة)
+encoded_password = urllib.parse.quote_plus(RAW_DB_PASS)
+
+# 2. ✅ دالة سحرية: تجبر النظام على استخدام IPv4 فقط لتفادي أخطاء Streamlit Cloud
+def get_connection_url():
     try:
         # محاولة الحصول على عنوان IP الرقمي (IPv4)
-        ip_address = socket.gethostbyname(host)
+        ip_address = socket.gethostbyname(DB_HOST)
         # تكوين الرابط باستخدام IP المباشر
-        return f"postgresql://postgres:{password}@{ip_address}:5432/{db_name}"
+        return f"postgresql://postgres:{encoded_password}@{ip_address}:5432/{DB_NAME}"
     except Exception as e:
         # في حال الفشل، نعود للرابط العادي
-        return f"postgresql://postgres:{password}@{host}:5432/{db_name}"
+        return f"postgresql://postgres:{encoded_password}@{DB_HOST}:5432/{DB_NAME}"
 
 # الحصول على الرابط الآمن
-DATABASE_URL = get_ipv4_url(DB_HOST, encoded_password, DB_NAME)
+DATABASE_URL = get_connection_url()
 
 # إنشاء الاتصال
 try:
@@ -97,6 +99,7 @@ def init_db():
             session.commit()
         session.close()
     except Exception as e:
+        # عرض الخطأ فقط في حالة التطوير، يمكن إخفاؤه لاحقاً
         print(f"Init Info: {e}")
 
 # ==========================================
