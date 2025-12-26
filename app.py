@@ -18,13 +18,10 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (باستخدام محرك pg8000 المستقر) 🛠️
+# 2. إعدادات قاعدة البيانات (pg8000)
 # ==========================================
-
-# بناء رابط الاتصال باستخدام محرك pg8000 بدلاً من psycopg2
-# هذا المحرك يعالج مشاكل الاتصال السحابي والرموز في كلمة المرور تلقائياً
 db_url = URL.create(
-    drivername="postgresql+pg8000",  # 👈 التغيير الجذري هنا
+    drivername="postgresql+pg8000",
     username="postgres",
     password="8?Q4.G/iLe84d-j",
     host="db.jecmwuiqofztficcujpe.supabase.co",
@@ -33,12 +30,11 @@ db_url = URL.create(
 )
 
 try:
-    # إنشاء المحرك
     engine = create_engine(db_url)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 except Exception as e:
-    st.error(f"خطأ في الاتصال بقاعدة البيانات: {e}")
+    st.error(f"خطأ في الاتصال: {e}")
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -63,7 +59,7 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)
-    details = Column(Text, nullable=True) # JSON
+    details = Column(Text, nullable=True) 
     activity_type = Column(String, nullable=False)
     classification = Column(String, nullable=True)
     publication_date = Column(Date, nullable=False)
@@ -72,6 +68,7 @@ class Work(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
+# دالة التهيئة (تم تحسينها لتعيد True عند النجاح)
 def init_db():
     try:
         Base.metadata.create_all(bind=engine)
@@ -85,12 +82,13 @@ def init_db():
             session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
             session.commit()
         session.close()
+        return True
     except Exception as e:
-        # طباعة الخطأ للسجلات فقط
-        print(f"DB Init Error: {e}")
+        st.sidebar.error(f"فشل التهيئة: {e}")
+        return False
 
 # ==========================================
-# 3. الخدمات (Services)
+# 3. الخدمات
 # ==========================================
 def auth_user(username, password):
     db = SessionLocal()
@@ -145,7 +143,7 @@ def get_works_dataframe():
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق (CSS)
+# 4. التنسيق
 # ==========================================
 st.markdown("""
 <style>
@@ -179,6 +177,7 @@ st.markdown("""
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+    # محاولة التهيئة التلقائية
     init_db()
 
 if not st.session_state['logged_in']:
@@ -198,15 +197,24 @@ if not st.session_state['logged_in']:
                             st.session_state['logged_in'] = True
                             st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else "إدارة مركزية", 'username': user.username}
                             st.rerun()
-                        else: st.error("خطأ في البيانات")
+                        else: st.error("خطأ في البيانات أو قاعدة البيانات غير مهيئة")
             with tab2:
                 with st.form("signup"):
                     session = SessionLocal()
+                    tn = ["جاري التحميل..."]
                     try:
-                        tn = [t.name for t in session.query(Team).all()]
-                    except:
-                        tn = ["جاري التحميل..."] # تفادي الخطأ عند أول تشغيل
+                        teams_data = session.query(Team).all()
+                        if teams_data:
+                            tn = [t.name for t in teams_data]
+                        else:
+                            tn = ["لا توجد فرق (اضغط تحديث)"]
+                    except: pass
                     session.close()
+                    
+                    # ✅ زر إصلاح البيانات (يظهر فقط إذا كانت القائمة فارغة)
+                    if tn == ["جاري التحميل..."] or tn == ["لا توجد فرق (اضغط تحديث)"]:
+                        st.warning("⚠️ لم يتم تحميل الفرق. قاعدة البيانات قد تكون فارغة.")
+                    
                     nu = st.text_input("اسم المستخدم")
                     np = st.text_input("كلمة المرور", type="password")
                     nf = st.text_input("الاسم الكامل")
@@ -220,6 +228,15 @@ if not st.session_state['logged_in']:
                             if register_user_service(nu, np, nf, rm[rc], nt): st.success("تم الإنشاء!")
                             else: st.error("المستخدم موجود")
                         else: st.error("الكود خاطئ")
+    
+    # ✅ زر طوارئ لتهيئة القاعدة يدوياً
+    with st.sidebar:
+        st.divider()
+        if st.button("🛠️ تهيئة قاعدة البيانات (لأول مرة)"):
+            if init_db():
+                st.success("تم إنشاء الجداول والبيانات بنجاح!")
+                time.sleep(1)
+                st.rerun()
 
 else:
     user = st.session_state['user']
