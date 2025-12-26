@@ -8,6 +8,7 @@ from datetime import date
 import plotly.express as px
 import time
 import json 
+import urllib.parse # ✅ مكتبة ضرورية لإصلاح كلمة المرور
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -18,18 +19,27 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات
+# 2. إعدادات قاعدة البيانات (تم الإصلاح)
 # ==========================================
-DB_USER = "postgres"
-DB_PASS = "12345"
-DB_HOST = "localhost"
-DB_PORT = "5432"
-DB_NAME = "lab_db_v2" 
 
-DATABASE_URL = "postgresql://postgres:8?Q4.G/iLe84d-j@db.jecmwuiqofztficcujpe.supabase.co:5432/postgres"
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# كلمة المرور الخاصة بك (تحتوي على رموز خاصة)
+RAW_DB_PASS = "8?Q4.G/iLe84d-j"
+
+# ✅ الخطوة السحرية: تحويل الرموز في كلمة السر لتكون آمنة داخل الرابط
+encoded_password = urllib.parse.quote_plus(RAW_DB_PASS)
+
+# تكوين الرابط بشكل سليم
+DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
+DB_NAME = "postgres"
+DATABASE_URL = f"postgresql://postgres:{encoded_password}@{DB_HOST}:5432/{DB_NAME}"
+
+# محاولة الاتصال
+try:
+    engine = create_engine(DATABASE_URL)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base = declarative_base()
+except Exception as e:
+    st.error(f"خطأ في الاتصال بقاعدة البيانات: {e}")
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -64,27 +74,34 @@ class Work(Base):
     researcher = relationship("User", back_populates="works")
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    session = SessionLocal()
-    if not session.query(Team).first():
-        teams = [Team(name="دراسات سوسيولوجية"), Team(name="علم النفس العيادي"), Team(name="تكنولوجيا التعليم")]
-        session.add_all(teams)
-        session.commit()
-    if not session.query(User).filter_by(username="admin").first():
-        hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
-        session.commit()
-    session.close()
+    try:
+        Base.metadata.create_all(bind=engine)
+        session = SessionLocal()
+        if not session.query(Team).first():
+            teams = [Team(name="دراسات سوسيولوجية"), Team(name="علم النفس العيادي"), Team(name="تكنولوجيا التعليم")]
+            session.add_all(teams)
+            session.commit()
+        if not session.query(User).filter_by(username="admin").first():
+            hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
+            session.commit()
+        session.close()
+    except Exception as e:
+        st.error(f"حدث خطأ أثناء تهيئة قاعدة البيانات: {e}")
 
 # ==========================================
 # 3. الخدمات (Services)
 # ==========================================
 def auth_user(username, password):
     db = SessionLocal()
-    user = db.query(User).options(joinedload(User.team)).filter(User.username == username).first()
-    db.close()
-    if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
-        return user
+    try:
+        user = db.query(User).options(joinedload(User.team)).filter(User.username == username).first()
+        if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+            return user
+    except Exception:
+        pass
+    finally:
+        db.close()
     return None
 
 def register_user_service(username, password, full_name, role, team_name):
@@ -108,14 +125,15 @@ def add_work_service(user_id, title, details_json, type_, class_, date_obj, poin
 
 def change_password_service(user_id, new_password):
     db = SessionLocal()
-    user = db.query(User).filter(User.id == user_id).first()
-    if user:
-        user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        db.commit()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user:
+            user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            db.commit()
+            return True
+        return False
+    finally:
         db.close()
-        return True
-    db.close()
-    return False
 
 def get_works_dataframe():
     query = """
@@ -124,7 +142,10 @@ def get_works_dataframe():
     FROM works w JOIN users u ON w.user_id = u.id LEFT JOIN teams t ON u.team_id = t.id
     ORDER BY w.publication_date DESC
     """
-    return pd.read_sql(query, engine)
+    try:
+        return pd.read_sql(query, engine)
+    except:
+        return pd.DataFrame()
 
 # ==========================================
 # 4. التنسيق (CSS)
@@ -156,7 +177,7 @@ st.markdown("""
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-left: 1px solid #e2e8f0;
-        min-width: 320px !important;
+        min-width: 300px !important;
         max-width: 320px !important;
     }
     
@@ -166,22 +187,22 @@ st.markdown("""
     [data-testid="stDataFrame"] th { text-align: right !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
     
     /* تنسيق التبويبات Tabs */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
-        height: 50px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0;
-        gap: 1px; padding-top: 10px; padding-bottom: 10px; font-family: 'Cairo', sans-serif; font-weight: 700;
+        height: 45px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0;
+        gap: 1px; padding-top: 8px; padding-bottom: 8px; font-family: 'Cairo', sans-serif; font-weight: 700; font-size: 14px;
     }
     .stTabs [aria-selected="true"] { background-color: #eff6ff; color: #2563eb; border-bottom: 2px solid #2563eb; }
 
     /* بطاقات KPI */
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 30px; direction: rtl; }
-    .kpi-card { background: #ffffff; padding: 25px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.04); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
-    .kpi-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(37, 99, 235, 0.1); border-color: var(--primary-color); }
-    .kpi-card::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 5px; background: var(--primary-color); border-radius: 0 16px 16px 0; }
-    .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-    .kpi-icon { width: 45px; height: 45px; background: #eff6ff; color: var(--primary-color); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-    .kpi-value { font-family: 'Cairo', sans-serif; font-size: 32px; font-weight: 800; color: #0f172a; line-height: 1; }
-    .kpi-title { font-size: 14px; color: #64748b; font-weight: 500; margin-top: 5px; }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
+    .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
+    .kpi-card::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 0 12px 12px 0; }
+    .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .kpi-icon { width: 40px; height: 40px; background: #eff6ff; color: var(--primary-color); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .kpi-value { font-family: 'Cairo', sans-serif; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1; }
+    .kpi-title { font-size: 13px; color: #64748b; font-weight: 500; margin-top: 5px; }
 
     .stButton>button { font-family: 'Cairo', sans-serif !important; font-weight: 700; border-radius: 8px; height: 45px; }
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
@@ -259,7 +280,7 @@ else:
             st.rerun()
 
     # =======================
-    # 1. لوحات القيادة (مع الفلترة الشاملة)
+    # 1. لوحات القيادة
     # =======================
     if selection in ["لوحة القيادة العامة", "لوحة قيادة الفرقة"]:
         st.title(selection_key)
@@ -271,7 +292,6 @@ else:
             current_df = df[df['team_name'] == user['team']]
             filter_title = f"تصفية بيانات: {user['team']}"
 
-        # ✅ إضافة شريط الفلترة هنا
         with st.expander(f"🔍 {filter_title}", expanded=True):
             c_f1, c_f2 = st.columns(2)
             with c_f1: 
@@ -391,7 +411,7 @@ else:
                     st.rerun()
                 else: st.error("يرجى إدخال العنوان")
 
-    # --- 3. السجلات (مع الفلترة لكل التبويبات) ---
+    # --- 3. السجلات ---
     elif selection in ["السجل العلمي للمخبر", "سجل أعمال الفرقة", "أعمالي الشخصية"]:
         st.title(selection_key)
         df = get_works_dataframe()
@@ -408,26 +428,34 @@ else:
                 except: return {}
             df['details_dict'] = df['details'].apply(parse_details)
 
-            # ✅ قسم الفلترة الموحد للتبويبات
+            # ✅ قسم الفلترة الموحد
             with st.expander("🔍 بحث متقدم وتصفية", expanded=True):
-                col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+                col_s1, col_s2, col_s3, col_s4, col_s5 = st.columns(5)
                 with col_s1: search_txt = st.text_input("بحث بعنوان العمل:")
-                with col_s2: type_fil = st.multiselect("نوع النشاط:", df['activity_type'].unique())
-                with col_s3: year_fil = st.multiselect("السنة:", sorted(df['year'].unique(), reverse=True))
-                # إضافة فلتر الباحث إذا لم يكن "أعمالي"
+                with col_s2: 
+                    all_types = sorted(df['activity_type'].unique())
+                    type_fil = st.multiselect("نوع النشاط:", all_types)
+                with col_s3: 
+                    all_years = sorted(df['year'].unique(), reverse=True)
+                    year_fil = st.multiselect("السنة:", all_years)
+                with col_s4:
+                    all_classes = sorted([x for x in df['classification'].unique() if x])
+                    class_fil = st.multiselect("التصنيف:", all_classes)
+                
                 researcher_fil = []
                 if selection != "أعمالي الشخصية":
-                    with col_s4: researcher_fil = st.multiselect("اسم الباحث:", df['researcher_name'].unique())
+                    with col_s5: 
+                        all_researchers = sorted(df['researcher_name'].unique())
+                        researcher_fil = st.multiselect("اسم الباحث:", all_researchers)
                 
-                # تطبيق الفلاتر على الداتا فريم الرئيسية قبل تقسيمها
                 if search_txt: df = df[df['title'].str.contains(search_txt, na=False)]
                 if type_fil: df = df[df['activity_type'].isin(type_fil)]
                 if year_fil: df = df[df['year'].isin(year_fil)]
+                if class_fil: df = df[df['classification'].isin(class_fil)]
                 if researcher_fil: df = df[df['researcher_name'].isin(researcher_fil)]
 
             st.markdown(f"**عدد النتائج المطابقة:** {len(df)}")
 
-            # الآن نعرض التبويبات بالبيانات المفلترة
             tab_all, tab_art, tab_conf, tab_book, tab_proj = st.tabs(["📋 الكل", "📰 المقالات", "🎤 المداخلات", "📚 الكتب", "🔬 المشاريع"])
 
             with tab_all:
@@ -502,5 +530,4 @@ else:
             with st.container(border=True):
                 st.info(f"الاسم: {user['name']}")
                 st.info(f"الدور: {user['role']}")
-
                 st.info(f"الفرقة: {user['team']}")
