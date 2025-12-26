@@ -8,7 +8,7 @@ from datetime import date
 import plotly.express as px
 import time
 import json 
-import urllib.parse # مكتبة ضرورية لتصحيح كلمة المرور
+import urllib.parse  # 👈 مكتبة ضرورية لإصلاح كلمة المرور
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -19,29 +19,32 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (الحل الصحيح)
+# 2. إعدادات قاعدة البيانات (تم الإصلاح هنا) 🛠️
 # ==========================================
 
-# 1. تعريف المتغيرات بشكل منفصل لتجنب أخطاء الرموز
-DB_USER = "postgres"
-RAW_PASS = "8?Q4.G/iLe84d-j"  # كلمة مرورك كما هي
+# 1. نضع بيانات الاتصال في متغيرات
+# (تم نسخ بياناتك بدقة من الكود الذي أرسلته)
+RAW_DB_PASS = "8?Q4.G/iLe84d-j" 
 DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
-DB_PORT = "5432"
 DB_NAME = "postgres"
+DB_USER = "postgres"
+DB_PORT = "5432"
 
-# 2. تشفير كلمة المرور (تحويل ? و / إلى رموز آمنة للرابط)
-encoded_password = urllib.parse.quote_plus(RAW_PASS)
+# 2. ✅ الخطوة الحاسمة: تشفير كلمة المرور لتعمل داخل الرابط
+# (هذا يحول ? إلى %3F ويحول / إلى %2F)
+encoded_password = urllib.parse.quote_plus(RAW_DB_PASS)
 
-# 3. بناء الرابط بشكل سليم
+# 3. بناء الرابط الآمن
 DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-# 4. إنشاء الاتصال مع فرض وضع الأمان SSL
+# 4. الاتصال
 try:
-    engine = create_engine(DATABASE_URL, connect_args={"sslmode": "require"})
+    # pool_pre_ping=True يساعد في استقرار الاتصال السحابي
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 except Exception as e:
-    st.error(f"خطأ في إعدادات الاتصال: {e}")
+    st.error(f"خطأ في الاتصال بقاعدة البيانات: {e}")
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -89,8 +92,8 @@ def init_db():
             session.commit()
         session.close()
     except Exception as e:
-        # طباعة الخطأ فقط في السجلات (Logs) وليس للمستخدم
-        print(f"Database Initialization Error: {e}")
+        # طباعة الخطأ في السجل فقط لتجنب إيقاف التطبيق
+        print(f"Init DB Warning: {e}")
 
 # ==========================================
 # 3. الخدمات (Services)
@@ -101,7 +104,7 @@ def auth_user(username, password):
         user = db.query(User).options(joinedload(User.team)).filter(User.username == username).first()
         if user and bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
             return user
-    except Exception:
+    except:
         pass
     finally:
         db.close()
@@ -180,6 +183,7 @@ st.markdown("""
         color: #1e3a8a;
     }
 
+    /* إصلاح السايدبار */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-left: 1px solid #e2e8f0;
@@ -187,10 +191,12 @@ st.markdown("""
         max-width: 320px !important;
     }
     
+    /* تنسيق الجداول */
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] table { direction: rtl !important; text-align: right !important; }
     [data-testid="stDataFrame"] th { text-align: right !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
     
+    /* تنسيق التبويبات Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 45px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0;
@@ -198,6 +204,7 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] { background-color: #eff6ff; color: #2563eb; border-bottom: 2px solid #2563eb; }
 
+    /* بطاقات KPI */
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
     .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
     .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
