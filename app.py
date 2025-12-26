@@ -19,7 +19,7 @@ st.set_page_config(page_title="منصة التميز البحثي", layout="wide
 # استبدل [YOUR-PASSWORD] بكلمة مرورك: 8?Q4.G/iLe84d-j
 # مثال على شكل الرابط: postgres://postgres.xxxx:pass@aws-0-eu-central-1.pooler.supabase.com:6543/postgres
 
-DB_CONNECTION_STRING = "postgres://postgres.jecmwuiqofztficcujpe:8%3FQ4.G%2FiLe84d-j@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=require"
+DB_CONNECTION_STRING = "postgres://postgres.jecmwuiqofztficcujpe:khalidcom_1981@aws-0-eu-central-1.pooler.supabase.com:6543/postgres?sslmode=require"
 
 # ملاحظة: قمتُ بمحاولة تخمين الرابط وتشفير كلمة السر لك في السطر أعلاه
 # إذا لم يعمل، احذفه وضع الرابط الذي نسخته أنت يدوياً
@@ -173,3 +173,4 @@ else:
         st.dataframe(df)
     else:
         st.info("سجل الأعمال فارغ حالياً. ابدأ بإضافة نتاج علمي جديد.")
+
