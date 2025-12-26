@@ -2,8 +2,9 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
+from sqlalchemy.engine import URL
 import bcrypt
-from datetime import date
+from datetime import date, datetime
 import plotly.express as px
 import time
 import json 
@@ -18,37 +19,35 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (مؤمنة 🔐)
+# 2. إعدادات قاعدة البيانات (مع التخزين المؤقت للأداء) ⚡
 # ==========================================
 
-# التحقق من وجود الأسرار لتجنب انهيار التطبيق
+# التحقق من الأسرار
 if "db" not in st.secrets:
-    st.error("❌ لم يتم العثور على بيانات الاتصال. يرجى إعداد Secrets في لوحة تحكم التطبيق.")
+    st.error("❌ ملف الأسرار غير موجود. يرجى إعداده في Streamlit Cloud.")
     st.stop()
 
-# قراءة البيانات من ملف الأسرار الآمن
-try:
-    db_config = st.secrets["db"]
-    RAW_PASS = db_config["password"]
-    DB_USER = db_config["user"]
-    DB_HOST = db_config["host"]
-    DB_PORT = db_config["port"]
-    DB_NAME = db_config["name"]
+# استخدام التخزين المؤقت لمنع إعادة الاتصال مع كل تحديث للصفحة
+@st.cache_resource
+def get_db_engine():
+    try:
+        db_config = st.secrets["db"]
+        encoded_password = urllib.parse.quote_plus(db_config["password"])
+        
+        # بناء الرابط
+        DATABASE_URL = f"postgresql://{db_config['user']}:{encoded_password}@{db_config['host']}:{db_config['port']}/{db_config['name']}?sslmode=require"
+        
+        # إنشاء المحرك
+        return create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
+    except Exception as e:
+        st.error(f"فشل إنشاء محرك قاعدة البيانات: {e}")
+        return None
 
-    # تشفير كلمة المرور (لضمان سلامة الرابط مع الرموز الخاصة)
-    encoded_password = urllib.parse.quote_plus(RAW_PASS)
+engine = get_db_engine()
+if not engine: st.stop()
 
-    # بناء الرابط الكامل
-    DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
-
-    # إنشاء المحرك
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    Base = declarative_base()
-
-except Exception as e:
-    st.error(f"حدث خطأ أثناء قراءة بيانات الاتصال: {e}")
-    st.stop()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -82,23 +81,27 @@ class Work(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
+# دالة التهيئة (تعمل مرة واحدة فقط)
 def init_db():
     try:
+        # التأكد من وجود الجداول
         Base.metadata.create_all(bind=engine)
+        
         session = SessionLocal()
+        # إضافة بيانات أولية ذكية
         if not session.query(Team).first():
             teams = [Team(name="دراسات سوسيولوجية"), Team(name="علم النفس العيادي"), Team(name="تكنولوجيا التعليم")]
             session.add_all(teams)
             session.commit()
+            
         if not session.query(User).filter_by(username="admin").first():
             hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
             session.commit()
         session.close()
-        return True
     except Exception as e:
-        print(f"Init Warning: {e}")
-        return False
+        # تسجيل الخطأ في الكونسول فقط
+        print(f"DB Init Log: {e}")
 
 # ==========================================
 # 3. الخدمات (Services)
@@ -131,7 +134,10 @@ def add_work_service(user_id, title, details_json, type_, class_, date_obj, poin
     try:
         db.add(Work(user_id=user_id, title=title, details=details_json, activity_type=type_, classification=class_, publication_date=date_obj, year=date_obj.year, points=points))
         db.commit()
-    except: db.rollback()
+        return True
+    except:
+        db.rollback()
+        return False
     finally: db.close()
 
 def change_password_service(user_id, new_password):
@@ -156,7 +162,7 @@ def get_works_dataframe():
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق (CSS) - RTL
+# 4. التنسيق (CSS) - RTL الاحترافي
 # ==========================================
 st.markdown("""
 <style>
@@ -188,7 +194,6 @@ st.markdown("""
         direction: rtl !important;
     }
 
-    /* إصلاح السايدبار */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-left: 1px solid #e2e8f0;
@@ -196,12 +201,10 @@ st.markdown("""
         max-width: 320px !important;
     }
     
-    /* تنسيق الجداول */
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] table { direction: rtl !important; text-align: right !important; }
     [data-testid="stDataFrame"] th { text-align: right !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
     
-    /* تنسيق التبويبات */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; justify-content: flex-start; }
     .stTabs [data-baseweb="tab"] {
         height: 45px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0;
@@ -209,10 +212,9 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] { background-color: #eff6ff; color: #2563eb; border-bottom: 2px solid #2563eb; }
 
-    /* بطاقات KPI */
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
     .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
-    
+    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
     .kpi-card::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 0 12px 12px 0; }
     
     .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
@@ -224,6 +226,9 @@ st.markdown("""
     
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
     .stRadio { direction: rtl; text-align: right; }
+    
+    /* تنسيق خاص للتوست */
+    div[data-testid="stToast"] { direction: rtl; text-align: right; font-family: 'Cairo'; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -239,7 +244,7 @@ if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # التوسط
+        # التوسط في الصفحة الرئيسية
         st.markdown("""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
             <div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>
@@ -255,12 +260,15 @@ if not st.session_state['logged_in']:
                     u = st.text_input("اسم المستخدم")
                     p = st.text_input("كلمة المرور", type="password")
                     if st.form_submit_button("تسجيل الدخول", use_container_width=True, type="primary"):
-                        user = auth_user(u, p)
-                        if user:
-                            st.session_state['logged_in'] = True
-                            st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else "إدارة مركزية", 'username': user.username}
-                            st.rerun()
-                        else: st.error("خطأ في البيانات")
+                        with st.spinner("جاري التحقق..."): # ⏳ سبينر احترافي
+                            user = auth_user(u, p)
+                            if user:
+                                st.session_state['logged_in'] = True
+                                st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else "إدارة مركزية", 'username': user.username}
+                                st.toast("تم تسجيل الدخول بنجاح! 👋", icon="✅") # 🍞 توست
+                                time.sleep(1)
+                                st.rerun()
+                            else: st.toast("خطأ في اسم المستخدم أو كلمة المرور", icon="❌")
             with tab2:
                 with st.form("signup"):
                     session = SessionLocal()
@@ -281,10 +289,13 @@ if not st.session_state['logged_in']:
                     if st.form_submit_button("إنشاء حساب", use_container_width=True):
                         rm = {"باحث": "researcher", "رئيس فرقة": "leader", "مدير": "admin"}
                         cm = {"researcher": "RES2025", "leader": "LEADER2025", "admin": "ADMIN2025"}
+                        
                         if co == cm.get(rm.get(rc, ""), ""):
-                            if register_user_service(nu, np, nf, rm[rc], nt): st.success("تم الإنشاء!")
-                            else: st.error("المستخدم موجود")
-                        else: st.error("الكود خاطئ")
+                            with st.spinner("جاري إنشاء الحساب..."):
+                                if register_user_service(nu, np, nf, rm[rc], nt):
+                                    st.toast("تم إنشاء الحساب بنجاح! قم بتسجيل الدخول الآن.", icon="🎉")
+                                else: st.toast("اسم المستخدم هذا محجوز مسبقاً", icon="⚠️")
+                        else: st.toast("كود التفعيل غير صحيح", icon="⛔")
 
 else:
     user = st.session_state['user']
@@ -375,13 +386,24 @@ else:
         w_type = st.selectbox("", ["مقال علمي", "مداخلة دولية", "مداخلة وطنية", "كتاب", "مشروع بحث"], label_visibility="collapsed")
         st.markdown("---")
 
-        with st.form("dynamic_form"):
+        # 🧹 منطق تفريغ الحقول باستخدام Session State
+        if 'form_submitted' not in st.session_state: st.session_state['form_submitted'] = False
+
+        # دالة لإعادة تعيين النموذج
+        def clear_form():
+            st.session_state['form_submitted'] = True
+        
+        # إذا تم الحفظ، نقوم بتفريغ القيم (عبر إعادة تحميل الصفحة أو مسح الـ key)
+        # الطريقة الأبسط في ستريم ليت هي استخدام مفتاح فريد يتغير مع كل حفظ
+        if 'form_id' not in st.session_state: st.session_state['form_id'] = 0
+
+        with st.form(key=f"dynamic_form_{st.session_state['form_id']}"):
             col_main1, col_main2 = st.columns([3, 1])
             with col_main1: w_title = st.text_input("العنوان الكامل للعمل")
             with col_main2: w_date = st.date_input("تاريخ النشر / الإنجاز")
 
-            # ✅ محاذاة لليمين للنص الديناميكي
-            st.markdown(f"<div style='text-align: right; direction: rtl; font-weight: bold;'>📄 تفاصيل خاصة بـ: {w_type}</div>", unsafe_allow_html=True)
+            # محاذاة النص لليمين
+            st.markdown(f"<div style='text-align: right; direction: rtl; font-weight: bold; margin-top:15px;'>📄 تفاصيل خاصة بـ: {w_type}</div>", unsafe_allow_html=True)
             
             extra_data = {}
             w_class = "غير مصنف"
@@ -437,12 +459,21 @@ else:
                     elif w_type == "كتاب": pts = 60
                     elif w_type == "مشروع بحث": pts = 80
                     else: pts = 10
+                    
                     json_str = json.dumps(extra_data, ensure_ascii=False)
-                    add_work_service(user['id'], w_title, json_str, w_type, w_class, w_date, pts)
-                    st.success("✅ تمت الإضافة بنجاح!")
-                    time.sleep(1)
-                    st.rerun()
-                else: st.error("يرجى إدخال العنوان")
+                    
+                    # ⏳ سبينر أثناء الحفظ
+                    with st.spinner("جاري حفظ البيانات في السجل..."):
+                        success = add_work_service(user['id'], w_title, json_str, w_type, w_class, w_date, pts)
+                        if success:
+                            st.toast("✅ تم حفظ النتاج العلمي بنجاح!", icon="💾")
+                            time.sleep(1)
+                            # تغيير معرف النموذج لإفراغه
+                            st.session_state['form_id'] += 1 
+                            st.rerun()
+                        else:
+                            st.toast("❌ حدث خطأ أثناء الحفظ. حاول مرة أخرى.", icon="🚨")
+                else: st.toast("يرجى إدخال عنوان العمل على الأقل", icon="⚠️")
 
     elif selection in ["السجل العلمي للمخبر", "سجل أعمال الفرقة", "أعمالي الشخصية"]:
         st.title(selection_key)
@@ -535,12 +566,12 @@ else:
                     if st.form_submit_button("تحديث", type="primary"):
                         if p1 == p2 and len(p1) > 0:
                             if change_password_service(user['id'], p1):
-                                st.success("تم التحديث! سجل الدخول مجدداً.")
+                                st.toast("تم التحديث! سجل الدخول مجدداً.", icon="✅")
                                 time.sleep(2)
                                 st.session_state['logged_in'] = False
                                 st.rerun()
-                            else: st.error("خطأ")
-                        else: st.error("كلمات المرور غير متطابقة")
+                            else: st.toast("حدث خطأ أثناء التحديث", icon="❌")
+                        else: st.toast("كلمات المرور غير متطابقة", icon="⚠️")
         with tab_prof:
             with st.container(border=True):
                 st.info(f"الاسم: {user['name']}")
