@@ -22,7 +22,7 @@ st.set_page_config(
 # ==========================================
 
 # بيانات الاتصال
-RAW_PASS = "8?Q4.G/iLe84d-j"
+RAW_PASS = "khalidcom_1981"
 DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
 DB_USER = "postgres"
 DB_NAME = "postgres"
@@ -490,3 +490,4 @@ else:
                 st.info(f"الاسم: {user['name']}")
                 st.info(f"الدور: {user['role']}")
                 st.info(f"الفرقة: {user['team']}")
+
