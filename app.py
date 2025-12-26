@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (الرابط الصحيح)
+# 2. إعدادات قاعدة البيانات
 # ==========================================
 
 RAW_PASS = "khalidcom_1981"
@@ -144,7 +144,7 @@ def get_works_dataframe():
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق (CSS) - RTL (اليمين لليسار) 
+# 4. التنسيق (CSS) - RTL محسّن
 # ==========================================
 st.markdown("""
 <style>
@@ -156,7 +156,7 @@ st.markdown("""
         --text-color: #1e293b;
     }
 
-    /* ضبط الاتجاه العام */
+    /* تعويم الصفحة بالكامل لليمين */
     html, body, .stApp {
         font-family: 'Tajawal', sans-serif;
         direction: rtl; 
@@ -165,17 +165,24 @@ st.markdown("""
         text-align: right;
     }
     
-    h1, h2, h3, h4 {
+    /* ضبط العناوين */
+    h1, h2, h3, h4, h5, h6 {
         font-family: 'Cairo', sans-serif !important;
         font-weight: 800;
         color: #1e3a8a;
-        text-align: right;
+        text-align: right !important;
     }
 
-    /* إصلاح السايدبار ليكون متوافقاً مع العربية */
+    /* إجبار نصوص الماركداون على اليمين */
+    .stMarkdown, .stText, p {
+        text-align: right !important;
+        direction: rtl !important;
+    }
+
+    /* إصلاح السايدبار */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
-        border-left: 1px solid #e2e8f0; /* الحدود على اليسار */
+        border-left: 1px solid #e2e8f0;
         min-width: 300px !important;
         max-width: 320px !important;
     }
@@ -196,7 +203,6 @@ st.markdown("""
     /* بطاقات KPI */
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
     .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
-    .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
     
     /* الشريط الملون على اليمين */
     .kpi-card::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 0 12px 12px 0; }
@@ -208,10 +214,8 @@ st.markdown("""
 
     .stButton>button { font-family: 'Cairo', sans-serif !important; font-weight: 700; border-radius: 8px; height: 45px; }
     
-    /* محاذاة المدخلات لليمين */
+    /* محاذاة المدخلات */
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
-    
-    /* محاذاة الراديو */
     .stRadio { direction: rtl; text-align: right; }
 </style>
 """, unsafe_allow_html=True)
@@ -353,7 +357,9 @@ else:
             with col_main1: w_title = st.text_input("العنوان الكامل للعمل")
             with col_main2: w_date = st.date_input("تاريخ النشر / الإنجاز")
 
-            st.markdown(f"**📄 تفاصيل خاصة بـ: {w_type}**")
+            # ✅ هنا قمت باستخدام HTML لفرض المحاذاة لليمين للنص الذي طلبته
+            st.markdown(f"<div style='text-align: right; direction: rtl; font-weight: bold;'>📄 تفاصيل خاصة بـ: {w_type}</div>", unsafe_allow_html=True)
+            
             extra_data = {}
             w_class = "غير مصنف"
 
