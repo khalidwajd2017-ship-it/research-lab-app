@@ -6,9 +6,10 @@ from sqlalchemy.exc import IntegrityError
 import bcrypt
 from datetime import date
 import plotly.express as px
-import time    
+import time
 import json 
-import urllib.parse # ✅ مكتبة ضرورية جداً لحل مشكلة الرموز في كلمة السر
+import urllib.parse 
+import socket # ✅ مكتبة الشبكات لحل مشكلة الاتصال
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -19,28 +20,36 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (تم إصلاح المشكلة هنا) 🛠️
+# 2. إعدادات قاعدة البيانات (الحل الجذري للاتصال السحابي) 🛠️
 # ==========================================
 
-# 1. وضعنا كلمة المرور في متغير منفصل
 RAW_DB_PASS = "8?Q4.G/iLe84d-j"
-
-# 2. نقوم بتشفيرها لتصبح آمنة داخل الرابط (تحول الرموز ? و / إلى أكواد)
 encoded_password = urllib.parse.quote_plus(RAW_DB_PASS)
 
-# 3. تكوين الرابط الصحيح باستخدام كلمة السر المشفرة
-# (تم استخدام رابط Supabase الخاص بك مباشرة لضمان العمل)
 DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
 DB_NAME = "postgres"
-DATABASE_URL = f"postgresql://postgres:{encoded_password}@{DB_HOST}:5432/{DB_NAME}"
 
-# 4. إنشاء الاتصال
+# ✅ دالة سحرية: تجبر النظام على استخدام IPv4 فقط
+def get_ipv4_url(host, password, db_name):
+    try:
+        # محاولة الحصول على عنوان IP الرقمي (IPv4)
+        ip_address = socket.gethostbyname(host)
+        # تكوين الرابط باستخدام IP المباشر
+        return f"postgresql://postgres:{password}@{ip_address}:5432/{db_name}"
+    except Exception as e:
+        # في حال الفشل، نعود للرابط العادي
+        return f"postgresql://postgres:{password}@{host}:5432/{db_name}"
+
+# الحصول على الرابط الآمن
+DATABASE_URL = get_ipv4_url(DB_HOST, encoded_password, DB_NAME)
+
+# إنشاء الاتصال
 try:
     engine = create_engine(DATABASE_URL)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 except Exception as e:
-    st.error(f"فشل الاتصال بقاعدة البيانات. تأكد من صحة البيانات. الخطأ: {e}")
+    st.error(f"فشل الاتصال بقاعدة البيانات. الخطأ: {e}")
 
 # --- تعريف الجداول ---
 class Team(Base):
@@ -65,7 +74,7 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)
-    details = Column(Text, nullable=True) # JSON
+    details = Column(Text, nullable=True) 
     activity_type = Column(String, nullable=False)
     classification = Column(String, nullable=True)
     publication_date = Column(Date, nullable=False)
@@ -88,8 +97,7 @@ def init_db():
             session.commit()
         session.close()
     except Exception as e:
-        # تجاهل الخطأ البسيط إذا كانت الجداول موجودة، أو عرضه للتصحيح
-        print(f"Database Init Info: {e}")
+        print(f"Init Info: {e}")
 
 # ==========================================
 # 3. الخدمات (Services)
@@ -179,7 +187,6 @@ st.markdown("""
         color: #1e3a8a;
     }
 
-    /* إصلاح السايدبار */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-left: 1px solid #e2e8f0;
@@ -187,12 +194,10 @@ st.markdown("""
         max-width: 320px !important;
     }
     
-    /* تنسيق الجداول */
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
     [data-testid="stDataFrame"] table { direction: rtl !important; text-align: right !important; }
     [data-testid="stDataFrame"] th { text-align: right !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
     
-    /* تنسيق التبويبات Tabs */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; }
     .stTabs [data-baseweb="tab"] {
         height: 45px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0;
@@ -200,7 +205,6 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] { background-color: #eff6ff; color: #2563eb; border-bottom: 2px solid #2563eb; }
 
-    /* بطاقات KPI */
     .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
     .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
     .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
@@ -298,7 +302,6 @@ else:
             current_df = df[df['team_name'] == user['team']]
             filter_title = f"تصفية بيانات: {user['team']}"
 
-        # --- الفلترة ---
         with st.expander(f"🔍 {filter_title}", expanded=True):
             c_f1, c_f2 = st.columns(2)
             with c_f1: 
