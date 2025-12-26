@@ -18,24 +18,20 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (الرابط الجديد) 🛠️
+# 2. إعدادات قاعدة البيانات (الرابط الصحيح)
 # ==========================================
 
-# بيانات الاتصال المستخرجة من الرابط الذي أرسلته
 RAW_PASS = "khalidcom_1981"
 DB_USER = "postgres.jecmwuiqofztficcujpe"
 DB_HOST = "aws-1-eu-west-2.pooler.supabase.com"
 DB_PORT = "6543"
 DB_NAME = "postgres"
 
-# تشفير كلمة المرور (لضمان سلامة الرابط)
 encoded_password = urllib.parse.quote_plus(RAW_PASS)
 
-# بناء الرابط الكامل مع تفعيل SSL
 DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
 
 try:
-    # إنشاء المحرك مع إعدادات الاتصال السحابي
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
@@ -148,7 +144,7 @@ def get_works_dataframe():
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق (CSS) - LTR (اليسار لليمين)
+# 4. التنسيق (CSS) - RTL (اليمين لليسار) 
 # ==========================================
 st.markdown("""
 <style>
@@ -160,31 +156,36 @@ st.markdown("""
         --text-color: #1e293b;
     }
 
+    /* ضبط الاتجاه العام */
     html, body, .stApp {
         font-family: 'Tajawal', sans-serif;
-        direction: ltr; 
+        direction: rtl; 
         background-color: var(--bg-color);
         color: var(--text-color);
+        text-align: right;
     }
     
     h1, h2, h3, h4 {
         font-family: 'Cairo', sans-serif !important;
         font-weight: 800;
         color: #1e3a8a;
-        text-align: left;
+        text-align: right;
     }
 
+    /* إصلاح السايدبار ليكون متوافقاً مع العربية */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
-        border-right: 1px solid #e2e8f0;
+        border-left: 1px solid #e2e8f0; /* الحدود على اليسار */
         min-width: 300px !important;
         max-width: 320px !important;
     }
     
+    /* تنسيق الجداول */
     [data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    [data-testid="stDataFrame"] table { direction: ltr !important; text-align: left !important; }
-    [data-testid="stDataFrame"] th { text-align: left !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
+    [data-testid="stDataFrame"] table { direction: rtl !important; text-align: right !important; }
+    [data-testid="stDataFrame"] th { text-align: right !important; background-color: #f1f5f9 !important; font-family: 'Cairo', sans-serif; }
     
+    /* تنسيق التبويبات */
     .stTabs [data-baseweb="tab-list"] { gap: 8px; justify-content: flex-start; }
     .stTabs [data-baseweb="tab"] {
         height: 45px; white-space: pre-wrap; background-color: #fff; border-radius: 8px 8px 0 0;
@@ -192,22 +193,26 @@ st.markdown("""
     }
     .stTabs [aria-selected="true"] { background-color: #eff6ff; color: #2563eb; border-bottom: 2px solid #2563eb; }
 
-    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: ltr; }
+    /* بطاقات KPI */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 25px; direction: rtl; }
     .kpi-card { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border: 1px solid #e2e8f0; position: relative; overflow: hidden; transition: all 0.3s ease; }
     .kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.08); border-color: var(--primary-color); }
     
-    .kpi-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 12px 0 0 12px; }
+    /* الشريط الملون على اليمين */
+    .kpi-card::before { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 4px; background: var(--primary-color); border-radius: 0 12px 12px 0; }
     
-    .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-direction: row-reverse; }
+    .kpi-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .kpi-icon { width: 40px; height: 40px; background: #eff6ff; color: var(--primary-color); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
     .kpi-value { font-family: 'Cairo', sans-serif; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1; }
-    .kpi-title { font-size: 13px; color: #64748b; font-weight: 500; margin-top: 5px; text-align: left; }
+    .kpi-title { font-size: 13px; color: #64748b; font-weight: 500; margin-top: 5px; text-align: right; }
 
     .stButton>button { font-family: 'Cairo', sans-serif !important; font-weight: 700; border-radius: 8px; height: 45px; }
     
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: left; direction: ltr; border-radius: 8px; }
+    /* محاذاة المدخلات لليمين */
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
     
-    .stRadio { direction: ltr; text-align: left; }
+    /* محاذاة الراديو */
+    .stRadio { direction: rtl; text-align: right; }
 </style>
 """, unsafe_allow_html=True)
 
