@@ -165,18 +165,18 @@ st.markdown("""
         text-align: right;
     }
     
-    /* ضبط العناوين */
+    /* ضبط العناوين العامة لليمين */
     h1, h2, h3, h4, h5, h6 {
         font-family: 'Cairo', sans-serif !important;
         font-weight: 800;
         color: #1e3a8a;
-        text-align: right !important;
+        text-align: right;
     }
 
     /* إجبار نصوص الماركداون على اليمين */
     .stMarkdown, .stText, p {
-        text-align: right !important;
-        direction: rtl !important;
+        text-align: right;
+        direction: rtl;
     }
 
     /* إصلاح السايدبار */
@@ -232,7 +232,7 @@ if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("""<div style="text-align: center; margin-bottom: 30px;"><div style="font-size: 60px;">🏛️</div><h1 style="color:#1e40af; font-family:'Cairo';">بوابة البحث العلمي</h1><p style="color:#64748b;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="text-align: center; margin-bottom: 30px;"><div style="font-size: 60px;">🏛️</div><h1 style="color:#1e40af; font-family:'Cairo'; text-align:center !important;">بوابة البحث العلمي</h1><p style="color:#64748b; text-align:center !important;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
         with st.container(border=True):
             tab1, tab2 = st.tabs(["🔐 دخول الأعضاء", "✨ حساب جديد"])
             with tab1:
@@ -274,8 +274,16 @@ if not st.session_state['logged_in']:
 else:
     user = st.session_state['user']
     with st.sidebar:
-        st.markdown("""<div style="text-align: center; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;"><div style="font-size: 40px;">🎓</div><h3 style="margin: 5px 0 0 0; color: #1e3a8a;">المركز البحثي أدرار</h3><span style="font-size: 12px; color: #64748b;">منصة التميز البحثي</span></div>""", unsafe_allow_html=True)
-        st.markdown(f"""<div style="display: flex; align-items: center; background: #f8fafc; padding: 12px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #e2e8f0;"><div style="width: 40px; height: 40px; background: #2563eb; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: 'Cairo'; margin-left: 10px;">{user['name'][0]}</div><div><div style="font-weight: bold; font-size: 14px; color: #334155;">{user['name']}</div><div style="font-size: 11px; color: #94a3b8;">{user['role']}</div></div></div>""", unsafe_allow_html=True)
+        # ✅ تعديل هنا: تم إضافة text-align: center !important لفرض التوسط في السايدبار
+        st.markdown("""
+        <div style="text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
+            <div style="font-size: 40px;">🎓</div>
+            <h3 style="margin: 5px 0 0 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">المركز البحثي أدرار</h3>
+            <span style="font-size: 12px; color: #64748b; display: block; text-align: center !important;">منصة التميز البحثي</span>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown(f"""<div style="display: flex; align-items: center; background: #f8fafc; padding: 12px; border-radius: 12px; margin-bottom: 20px; border: 1px solid #e2e8f0; direction: rtl;"><div style="width: 40px; height: 40px; background: #2563eb; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: 'Cairo'; margin-left: 10px;">{user['name'][0]}</div><div><div style="font-weight: bold; font-size: 14px; color: #334155;">{user['name']}</div><div style="font-size: 11px; color: #94a3b8;">{user['role']}</div></div></div>""", unsafe_allow_html=True)
 
         menu_options = {
             "admin": {"لوحة القيادة العامة": "📊 لوحة القيادة العامة", "السجل العلمي للمخبر": "🗂️ السجل العلمي للمخبر"},
