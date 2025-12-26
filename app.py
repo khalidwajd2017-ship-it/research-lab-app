@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
-from sqlalchemy.engine import URL
 import bcrypt
 from datetime import date
 import plotly.express as px
 import time
 import json 
+import urllib.parse 
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -18,19 +18,27 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات (pg8000)
+# 2. إعدادات قاعدة البيانات (الحل الذهبي: المنفذ 6543) 🛠️
 # ==========================================
-db_url = URL.create(
-    drivername="postgresql+pg8000",
-    username="postgres",
-    password="8?Q4.G/iLe84d-j",
-    host="db.jecmwuiqofztficcujpe.supabase.co",
-    port=5432,
-    database="postgres"
-)
+
+# بيانات الاتصال
+RAW_PASS = "8?Q4.G/iLe84d-j"
+DB_HOST = "db.jecmwuiqofztficcujpe.supabase.co"
+DB_USER = "postgres"
+DB_NAME = "postgres"
+
+# ✅ 1. استخدام المنفذ 6543 (Supavisor) بدلاً من 5432 لحل مشاكل الشبكة
+DB_PORT = "6543" 
+
+# ✅ 2. تشفير كلمة المرور بشكل صحيح
+encoded_password = urllib.parse.quote_plus(RAW_PASS)
+
+# ✅ 3. بناء الرابط (لاحظ إضافة ?sslmode=require لضمان الأمان)
+DATABASE_URL = f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
 
 try:
-    engine = create_engine(db_url)
+    # إنشاء المحرك
+    engine = create_engine(DATABASE_URL)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 except Exception as e:
@@ -68,15 +76,16 @@ class Work(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
-# دالة التهيئة (تم تحسينها لتعيد True عند النجاح)
 def init_db():
     try:
         Base.metadata.create_all(bind=engine)
         session = SessionLocal()
+        # إضافة الفرق افتراضياً إن لم توجد
         if not session.query(Team).first():
             teams = [Team(name="دراسات سوسيولوجية"), Team(name="علم النفس العيادي"), Team(name="تكنولوجيا التعليم")]
             session.add_all(teams)
             session.commit()
+        # إضافة المدير افتراضياً
         if not session.query(User).filter_by(username="admin").first():
             hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
@@ -84,11 +93,12 @@ def init_db():
         session.close()
         return True
     except Exception as e:
-        st.sidebar.error(f"فشل التهيئة: {e}")
+        # لا نوقف التطبيق بالكامل، بل نعرض تحذيراً فقط
+        print(f"Init Warning: {e}")
         return False
 
 # ==========================================
-# 3. الخدمات
+# 3. الخدمات (Services)
 # ==========================================
 def auth_user(username, password):
     db = SessionLocal()
@@ -143,7 +153,7 @@ def get_works_dataframe():
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق
+# 4. التنسيق (CSS)
 # ==========================================
 st.markdown("""
 <style>
@@ -177,7 +187,6 @@ st.markdown("""
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-    # محاولة التهيئة التلقائية
     init_db()
 
 if not st.session_state['logged_in']:
@@ -197,23 +206,18 @@ if not st.session_state['logged_in']:
                             st.session_state['logged_in'] = True
                             st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else "إدارة مركزية", 'username': user.username}
                             st.rerun()
-                        else: st.error("خطأ في البيانات أو قاعدة البيانات غير مهيئة")
+                        else: st.error("خطأ في البيانات (تأكد من أن قاعدة البيانات تعمل)")
             with tab2:
                 with st.form("signup"):
                     session = SessionLocal()
                     tn = ["جاري التحميل..."]
                     try:
+                        # محاولة جلب الفرق بأمان
                         teams_data = session.query(Team).all()
-                        if teams_data:
-                            tn = [t.name for t in teams_data]
-                        else:
-                            tn = ["لا توجد فرق (اضغط تحديث)"]
+                        if teams_data: tn = [t.name for t in teams_data]
+                        else: tn = ["لا توجد فرق"]
                     except: pass
                     session.close()
-                    
-                    # ✅ زر إصلاح البيانات (يظهر فقط إذا كانت القائمة فارغة)
-                    if tn == ["جاري التحميل..."] or tn == ["لا توجد فرق (اضغط تحديث)"]:
-                        st.warning("⚠️ لم يتم تحميل الفرق. قاعدة البيانات قد تكون فارغة.")
                     
                     nu = st.text_input("اسم المستخدم")
                     np = st.text_input("كلمة المرور", type="password")
@@ -229,14 +233,12 @@ if not st.session_state['logged_in']:
                             else: st.error("المستخدم موجود")
                         else: st.error("الكود خاطئ")
     
-    # ✅ زر طوارئ لتهيئة القاعدة يدوياً
+    # زر إعادة تهيئة يدوية (احتياطي)
     with st.sidebar:
-        st.divider()
-        if st.button("🛠️ تهيئة قاعدة البيانات (لأول مرة)"):
-            if init_db():
-                st.success("تم إنشاء الجداول والبيانات بنجاح!")
-                time.sleep(1)
-                st.rerun()
+        st.write("")
+        if st.button("♻️ تحديث الاتصال"):
+            init_db()
+            st.rerun()
 
 else:
     user = st.session_state['user']
