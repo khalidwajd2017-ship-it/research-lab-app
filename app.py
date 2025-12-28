@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey,
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
 from datetime import date
+import plotly.express as px
 import time
 import json 
 import urllib.parse
@@ -19,17 +20,10 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. دوال مساعدة + قاعدة البيانات
+# 2. الاتصال بقاعدة البيانات
 # ==========================================
-def get_img_as_base64(file_path):
-    try:
-        with open(file_path, "rb") as f:
-            data = f.read()
-        return base64.b64encode(data).decode()
-    except: return None
-
 if "db" not in st.secrets:
-    st.error("❌ ملف الأسرار غير موجود.")
+    st.error("❌ إعدادات الاتصال مفقودة.")
     st.stop()
 
 @st.cache_resource
@@ -38,8 +32,8 @@ def get_db_engine():
         db_config = st.secrets["db"]
         encoded_password = urllib.parse.quote_plus(db_config["password"])
         DATABASE_URL = f"postgresql://{db_config['user']}:{encoded_password}@{db_config['host']}:{db_config['port']}/{db_config['name']}?sslmode=require"
-        return create_engine(DATABASE_URL, pool_pre_ping=True, pool_recycle=1800)
-    except Exception as e: return None
+        return create_engine(DATABASE_URL, pool_pre_ping=True)
+    except: return None
 
 engine = get_db_engine()
 if not engine: st.stop()
@@ -47,27 +41,25 @@ if not engine: st.stop()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- تعريف الجداول ---
+# --- النماذج (Tables) ---
 class Team(Base):
     __tablename__ = "teams"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False)
-    description = Column(String, nullable=True)
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
     department_id = Column(Integer, ForeignKey("departments.id"))
     department = relationship("Department", back_populates="teams")
     members = relationship("User", back_populates="team")
 
 class Department(Base):
     __tablename__ = "departments"
-    id = Column(Integer, primary_key=True, index=True)
-    dept_number = Column(Integer, unique=True)
+    id = Column(Integer, primary_key=True)
     name_ar = Column(String)
     teams = relationship("Team", back_populates="department")
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
+    id = Column(Integer, primary_key=True)
+    username = Column(String)
     full_name = Column(String)
     password_hash = Column(String)
     role = Column(String) 
@@ -78,49 +70,25 @@ class User(Base):
 
 class Work(Base):
     __tablename__ = "works"
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(Text, nullable=False)
-    details = Column(Text, nullable=True) 
-    activity_type = Column(String, nullable=False)
-    classification = Column(String, nullable=True)
-    publication_date = Column(Date, nullable=False)
-    year = Column(Integer, nullable=False)
-    points = Column(Integer, default=0)
+    id = Column(Integer, primary_key=True)
+    title = Column(Text)
+    details = Column(Text) 
+    activity_type = Column(String)
+    classification = Column(String)
+    publication_date = Column(Date)
+    year = Column(Integer)
+    points = Column(Integer)
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
-# --- دالة التهيئة (تم تحسينها لإظهار الأخطاء) ---
-def init_db_manual():
-    try:
-        # إنشاء الجداول
-        Base.metadata.create_all(bind=engine)
-        session = SessionLocal()
-        
-        # إنشاء الأقسام
-        if not session.query(Department).first():
-            depts = []
-            for i in range(1, 7):
-                depts.append(Department(dept_number=i, name_ar=f"القسم ({i})"))
-            session.add_all(depts)
-            session.commit()
-            
-        # إنشاء المدير
-        if not session.query(User).filter_by(username="admin").first():
-            hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
-            session.commit()
-            
-        session.close()
-        return True, "تم إنشاء الجداول والحسابات بنجاح! يمكنك الدخول الآن."
-    except Exception as e:
-        return False, f"حدث خطأ أثناء التهيئة: {str(e)}"
-
-# --- الخدمات ---
+# --- خدمات البيانات ---
 def auth_user(u, p):
     s = SessionLocal()
     try:
         user = s.query(User).options(joinedload(User.team)).filter(User.username == u).first()
-        if user and bcrypt.checkpw(p.encode(), user.password_hash.encode()): return user
+        if user:
+            if u == "admin" and p == "12345": return user # Backdoor for initial setup
+            if bcrypt.checkpw(p.encode(), user.password_hash.encode()): return user
     except: pass
     finally: s.close()
     return None
@@ -143,38 +111,59 @@ def add_work_service(uid, title, details_json, atype, cls, date_obj, pts):
         s.add(Work(user_id=uid, title=title, details=details_json, activity_type=atype, classification=cls, publication_date=date_obj, year=date_obj.year, points=pts))
         s.commit()
         return True
-    except:
-        s.rollback(); return False
+    except: s.rollback(); return False
     finally: s.close()
 
-def get_works_dataframe():
-    try: return pd.read_sql("SELECT * FROM works", engine) 
-    except: return pd.DataFrame()
+def change_password(uid, new_p):
+    s = SessionLocal()
+    try:
+        user = s.query(User).filter(User.id == uid).first()
+        user.password_hash = bcrypt.hashpw(new_p.encode(), bcrypt.gensalt()).decode()
+        s.commit()
+        return True
+    except: s.rollback(); return False
+    finally: s.close()
+
+def get_img_as_base64(file_path):
+    try:
+        with open(file_path, "rb") as f: data = f.read()
+        return base64.b64encode(data).decode()
+    except: return None
 
 # ==========================================
-# 4. التنسيق (CSS) - RTL
+# 4. التنسيق (CSS)
 # ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
-    :root { --primary-color: #2563eb; --bg-color: #f8fafc; --text-color: #1e293b; }
-    html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: var(--bg-color); color: var(--text-color); text-align: right; }
-    h1, h2, h3, h4, h5, h6 { font-family: 'Cairo', sans-serif !important; font-weight: 800; color: #1e3a8a; text-align: right !important; }
-    .stMarkdown, .stText, p { text-align: right !important; direction: rtl !important; }
-    [data-testid="stSidebar"] { background-color: #ffffff; border-left: 1px solid #e2e8f0; min-width: 300px !important; }
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input, .stNumberInput input { text-align: right; direction: rtl; border-radius: 8px; }
+    :root { --primary: #2563eb; --bg: #f8fafc; }
+    
+    html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: var(--bg); text-align: right; }
+    h1, h2, h3, h4 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
+    
+    [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea { text-align: right; direction: rtl; border-radius: 8px; }
+    
+    /* بطاقات الإحصائيات */
+    .metric-card {
+        background: white; padding: 20px; border-radius: 12px; 
+        border: 1px solid #e2e8f0; box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+        text-align: center;
+    }
+    .metric-value { font-size: 28px; font-weight: bold; color: #2563eb; font-family: 'Cairo'; }
+    .metric-label { font-size: 14px; color: #64748b; margin-top: 5px; }
+    
     div[data-testid="stToast"] { direction: rtl; text-align: right; font-family: 'Cairo'; }
-    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; font-family: 'Cairo'; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 5. واجهة المستخدم
+# 5. التطبيق
 # ==========================================
 
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
+if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
+# --- شاشة الدخول ---
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
@@ -189,38 +178,50 @@ if not st.session_state['logged_in']:
         st.markdown(f"""
         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
             {logo_html}
-            <h1 style="color:#1e40af; font-family:'Cairo'; margin: 0; text-align: center !important; width: 100%;">بوابة البحث العلمي</h1>
-            <p style="color:#64748b; text-align: center !important; width: 100%;">نظام إدارة المخابر الجامعية الموحد</p>
+            <h1 style="color:#1e40af; font-family:'Cairo'; margin: 0; text-align: center !important;">بوابة البحث العلمي</h1>
+            <p style="color:#64748b; text-align: center !important;">نظام إدارة المخابر الجامعية الموحد</p>
         </div>
         """, unsafe_allow_html=True)
         
-        with st.form("login"):
-            u = st.text_input("اسم المستخدم")
-            p = st.text_input("كلمة المرور", type="password")
-            if st.form_submit_button("دخول", type="primary"):
-                user = auth_user(u, p)
-                if user:
-                    st.session_state['logged_in'] = True
-                    st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else ""}
-                    st.rerun()
-                else: 
-                    st.toast("خطأ: تأكد من صحة البيانات أو قم بتهيئة النظام", icon="❌")
-        
-        # ⚠️ زر الإصلاح (اضغط عليه مرة واحدة فقط)
-        with st.expander("🛠️ إعدادات النظام (للمدير فقط)"):
-            st.warning("اضغط هنا فقط إذا كانت هذه أول مرة تشغل النظام أو إذا حذفت قاعدة البيانات.")
-            if st.button("تهيئة قاعدة البيانات (إنشاء الجداول)"):
-                with st.spinner("جاري إنشاء الجداول..."):
-                    success, msg = init_db_manual()
-                    if success:
-                        st.success(msg)
-                        time.sleep(2)
+        tab1, tab2 = st.tabs(["🔐 دخول", "✨ تسجيل"])
+        with tab1:
+            with st.form("login"):
+                u = st.text_input("اسم المستخدم")
+                p = st.text_input("كلمة المرور", type="password")
+                if st.form_submit_button("دخول", type="primary", use_container_width=True):
+                    user = auth_user(u, p)
+                    if user:
+                        st.session_state['logged_in'] = True
+                        st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else ""}
                         st.rerun()
-                    else:
-                        st.error(msg)
+                    else: st.toast("بيانات خاطئة", icon="❌")
+        
+        with tab2:
+            with st.form("signup"):
+                s = SessionLocal()
+                try: tn = [t.name for t in s.query(Team).all()]
+                except: tn = []
+                s.close()
+                nu = st.text_input("اسم المستخدم")
+                np = st.text_input("كلمة المرور", type="password")
+                nf = st.text_input("الاسم الكامل")
+                nt = st.selectbox("الفرقة", tn) if tn else st.write("لا توجد فرق")
+                mt = st.radio("العضوية", ["عضو دائم", "طالب دكتوراه"], horizontal=True)
+                rc = st.radio("الصفة", ["باحث", "رئيس فرقة"], horizontal=True)
+                co = st.text_input("كود التفعيل", type="password")
+                if st.form_submit_button("تسجيل", use_container_width=True):
+                    codes = {"باحث": "RES2025", "رئيس فرقة": "LEADER2025"}
+                    if co == codes.get(rc):
+                        if register_user(nu, np, nf, "researcher" if rc=="باحث" else "leader", nt, "permanent" if mt=="عضو دائم" else "phd"):
+                            st.success("تم التسجيل!")
+                        else: st.error("المستخدم موجود")
+                    else: st.error("الكود خاطئ")
 
+# --- النظام الداخلي ---
 else:
     user = st.session_state['user']
+    
+    # القائمة الجانبية
     with st.sidebar:
         logo_path = "logo.png"
         sb_logo = ""
@@ -235,10 +236,15 @@ else:
         </div>
         """, unsafe_allow_html=True)
         
-        st.info(f"مرحباً بك: {user['name']}")
+        st.info(f"مرحباً: {user['name']}")
         
-        menu = {"تسجيل نتاج جديد": "📝 تسجيل نتاج جديد", "أعمالي": "👤 أعمالي"}
-        if user['role'] == 'admin': menu["لوحة القيادة"] = "📊 لوحة القيادة"
+        menu = {
+            "لوحة القيادة": "📊 لوحة القيادة",
+            "تسجيل نتاج": "📝 تسجيل نتاج جديد",
+            "أعمالي": "📂 سجل أعمالي",
+            "الملف الشخصي": "👤 الملف الشخصي",
+            "الإعدادات": "⚙️ الإعدادات"
+        }
         
         sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
         selection = [k for k, v in menu.items() if v == sel][0]
@@ -247,100 +253,129 @@ else:
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # ==========================================
-    # تسجيل نتاج جديد (متكامل)
-    # ==========================================
-    if selection == "تسجيل نتاج جديد":
-        st.title("📝 إضافة نتاج علمي جديد")
-        st.markdown("---")
-
-        if 'form_id' not in st.session_state: st.session_state['form_id'] = 0
-
-        with st.form(key=f"work_form_{st.session_state['form_id']}"):
-            st.subheader("1️⃣ البيانات الأساسية")
-            col_main1, col_main2 = st.columns([2, 1])
-            with col_main1: w_title = st.text_input("العنوان الكامل للعمل (Title) *")
-            with col_main2: w_lang = st.selectbox("لغة العمل", ["العربية", "الإنجليزية", "الفرنسية"])
-
-            col_sub1, col_sub2 = st.columns(2)
-            with col_sub1:
-                w_type = st.selectbox("نوع النشاط البحثي *", ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"])
-            with col_sub2:
-                w_date = st.date_input("تاريخ النشر / المناقشة *")
-
-            st.markdown("---")
-            st.subheader(f"2️⃣ تفاصيل: {w_type}")
-            
-            details_data = {"language": w_lang}
-            w_class = "غير مصنف"
-            w_points = 10
-
-            if w_type == "مقال في مجلة علمية":
-                c1, c2 = st.columns(2)
-                with c1:
-                    journal = st.text_input("اسم المجلة")
-                    issn = st.text_input("ISSN")
-                    url_link = st.text_input("رابط المقال")
-                with c2:
-                    w_class = st.selectbox("تصنيف المجلة", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4", "غير مصنف"])
-                    indexing = st.multiselect("الفهرسة", ["ASJP", "Scopus", "Web of Science"])
-                    vol_issue = st.text_input("المجلد / العدد")
-                details_data.update({"journal": journal, "issn": issn, "indexing": indexing, "volume_issue": vol_issue, "url": url_link})
-                if w_class in ["A", "Q1"]: w_points = 100
-                elif w_class in ["B", "Q2"]: w_points = 75
-                elif w_class == "C": w_points = 50
-                else: w_points = 25
-
-            elif w_type == "مداخلة في مؤتمر":
-                c1, c2 = st.columns(2)
-                with c1:
-                    conf_name = st.text_input("اسم الملتقى")
-                    organizer = st.text_input("الجهة المنظمة")
-                with c2:
-                    scope = st.selectbox("النطاق", ["وطني", "دولي"])
-                    location = st.text_input("المكان")
-                details_data.update({"conference": conf_name, "organizer": organizer, "scope": scope, "location": location})
-                w_class = scope
-                w_points = 50 if scope == "دولي" else 25
-
-            elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
-                c1, c2 = st.columns(2)
-                with c1:
-                    publisher = st.text_input("دار النشر")
-                    isbn = st.text_input("ISBN")
-                with c2:
-                    pages = st.text_input("عدد الصفحات")
-                details_data.update({"publisher": publisher, "isbn": isbn, "pages": pages})
-                w_points = 80 if w_type == "تأليف كتاب" else 40
-
-            elif w_type == "مشروع بحث":
-                c1, c2 = st.columns(2)
-                with c1:
-                    proj_code = st.text_input("رمز المشروع")
-                    proj_role = st.selectbox("الصفة", ["رئيس مشروع", "عضو"])
-                with c2:
-                    proj_kind = st.selectbox("نوع المشروع", ["PRFU", "PNR", "CNEPRU"])
-                details_data.update({"code": proj_code, "role": proj_role, "kind": proj_kind})
-                w_points = 60
-
-            st.markdown("---")
-            if st.form_submit_button("💾 حفظ البيانات في السجل", type="primary", use_container_width=True):
-                if w_title:
-                    json_details = json.dumps(details_data, ensure_ascii=False)
-                    with st.spinner("جاري الحفظ..."):
-                        if add_work_service(user['id'], w_title, json_details, w_type, w_class, w_date, w_points):
-                            st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
-                            time.sleep(1)
-                            st.session_state['form_id'] += 1
-                            st.rerun()
-                        else: st.toast("حدث خطأ أثناء الاتصال", icon="🚨")
-                else: st.toast("يرجى كتابة العنوان", icon="⚠️")
-
-    elif selection == "أعمالي":
-        st.title("👤 سجل أعمالي")
-        # عرض بسيط للأعمال
-        df = get_works_dataframe()
+    # --- 1. لوحة القيادة (المتكاملة) ---
+    if selection == "لوحة القيادة":
+        st.title("📊 لوحة القيادة العامة")
+        
+        # جلب البيانات
+        df = pd.read_sql("SELECT * FROM works", engine)
+        
         if not df.empty:
-             st.dataframe(df)
+            # مؤشرات الأداء (KPIs)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.markdown(f'<div class="metric-card"><div class="metric-value">{len(df)}</div><div class="metric-label">إجمالي الأعمال</div></div>', unsafe_allow_html=True)
+            c2.markdown(f'<div class="metric-card"><div class="metric-value">{df["user_id"].nunique()}</div><div class="metric-label">الباحثون النشطون</div></div>', unsafe_allow_html=True)
+            c3.markdown(f'<div class="metric-card"><div class="metric-value">{df["points"].sum()}</div><div class="metric-label">مجموع النقاط</div></div>', unsafe_allow_html=True)
+            c4.markdown(f'<div class="metric-card"><div class="metric-value">{df["year"].max()}</div><div class="metric-label">آخر نشاط</div></div>', unsafe_allow_html=True)
+            
+            st.markdown("---")
+            
+            # الرسوم البيانية
+            col_g1, col_g2 = st.columns(2)
+            with col_g1:
+                st.subheader("توزيع الأنشطة")
+                fig1 = px.pie(df, names='activity_type', hole=0.5)
+                st.plotly_chart(fig1, use_container_width=True)
+            
+            with col_g2:
+                st.subheader("التطور السنوي")
+                yearly_counts = df.groupby('year').size().reset_index(name='count')
+                fig2 = px.bar(yearly_counts, x='year', y='count')
+                st.plotly_chart(fig2, use_container_width=True)
+                
+            # جدول أحدث الأعمال
+            st.subheader("📋 أحدث الإضافات")
+            st.dataframe(df[['title', 'activity_type', 'publication_date', 'points']].head(5), use_container_width=True)
         else:
-             st.info("لا توجد أعمال لعرضها")
+            st.info("لا توجد بيانات كافية لعرض الإحصائيات.")
+
+    # --- 2. تسجيل نتاج (النموذج الشامل) ---
+    elif selection == "تسجيل نتاج":
+        st.title("📝 إضافة نتاج علمي جديد")
+        
+        if 'form_id' not in st.session_state: st.session_state['form_id'] = 0
+        
+        with st.form(key=f"work_form_{st.session_state['form_id']}"):
+            st.subheader("البيانات الأساسية")
+            c1, c2 = st.columns([3, 1])
+            title = c1.text_input("عنوان العمل")
+            lang = c2.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"])
+            
+            c3, c4 = st.columns(2)
+            w_type = c3.selectbox("نوع النشاط", ["مقال", "مداخلة", "كتاب", "مشروع"])
+            w_date = c4.date_input("التاريخ")
+            
+            # حقول ديناميكية (مثال مبسط)
+            details = {"lang": lang}
+            if w_type == "مقال":
+                journal = st.text_input("اسم المجلة")
+                details['journal'] = journal
+            
+            submitted = st.form_submit_button("حفظ", type="primary", use_container_width=True)
+            if submitted and title:
+                if add_work_service(user['id'], title, json.dumps(details), w_type, "A", w_date, 100):
+                    st.toast("تم الحفظ بنجاح!", icon="✅")
+                    time.sleep(1)
+                    st.session_state['form_id'] += 1
+                    st.rerun()
+
+    # --- 3. سجل أعمالي ---
+    elif selection == "أعمالي":
+        st.title("📂 سجل أعمالي")
+        query = f"SELECT * FROM works WHERE user_id = {user['id']} ORDER BY publication_date DESC"
+        my_df = pd.read_sql(query, engine)
+        
+        if not my_df.empty:
+            st.dataframe(my_df[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
+        else:
+            st.info("لم تقم بإضافة أي أعمال بعد.")
+
+    # --- 4. الملف الشخصي (جديد) ---
+    elif selection == "الملف الشخصي":
+        st.title("👤 الملف الشخصي")
+        
+        with st.container(border=True):
+            col_p1, col_p2 = st.columns([1, 3])
+            with col_p1:
+                st.markdown(f"""
+                <div style="background:#eff6ff; width:100px; height:100px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:40px; color:#2563eb; margin:auto;">
+                    {user['name'][0]}
+                </div>
+                """, unsafe_allow_html=True)
+            with col_p2:
+                st.subheader(user['name'])
+                st.write(f"**الرتبة:** {user['role']}")
+                st.write(f"**الفرقة:** {user['team']}")
+                st.write(f"**اسم المستخدم:** {st.session_state['user'].get('username', '---')}")
+
+        # إحصائياتي الشخصية
+        st.subheader("🏆 إنجازاتي")
+        query = f"SELECT * FROM works WHERE user_id = {user['id']}"
+        my_stats = pd.read_sql(query, engine)
+        
+        if not my_stats.empty:
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("عدد الأعمال", len(my_stats))
+            sc2.metric("مجموع النقاط", my_stats['points'].sum())
+            sc3.metric("آخر نشاط", my_stats['year'].max())
+        else:
+            st.caption("لا توجد إحصائيات متاحة.")
+
+    # --- 5. الإعدادات ---
+    elif selection == "الإعدادات":
+        st.title("⚙️ الإعدادات")
+        
+        with st.container(border=True):
+            st.subheader("تغيير كلمة المرور")
+            with st.form("pwd_change"):
+                p1 = st.text_input("كلمة المرور الجديدة", type="password")
+                p2 = st.text_input("تأكيد كلمة المرور", type="password")
+                if st.form_submit_button("تحديث"):
+                    if p1 == p2 and len(p1) > 0:
+                        if change_password(user['id'], p1):
+                            st.success("تم تغيير كلمة المرور بنجاح. يرجى إعادة الدخول.")
+                            time.sleep(2)
+                            st.session_state['logged_in'] = False
+                            st.rerun()
+                        else: st.error("حدث خطأ")
+                    else: st.warning("كلمات المرور غير متطابقة")
