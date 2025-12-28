@@ -80,7 +80,7 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True, index=True)
     title = Column(Text, nullable=False)
-    details = Column(Text, nullable=True) # هنا سنخزن كل التفاصيل الدقيقة كـ JSON
+    details = Column(Text, nullable=True) 
     activity_type = Column(String, nullable=False)
     classification = Column(String, nullable=True)
     publication_date = Column(Date, nullable=False)
@@ -89,18 +89,31 @@ class Work(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
-# --- دالة التهيئة ---
-def init_db():
+# --- دالة التهيئة (تم تحسينها لإظهار الأخطاء) ---
+def init_db_manual():
     try:
+        # إنشاء الجداول
         Base.metadata.create_all(bind=engine)
         session = SessionLocal()
-        # (نفس كود التهيئة السابق لإنشاء الأقسام والمدير...)
+        
+        # إنشاء الأقسام
+        if not session.query(Department).first():
+            depts = []
+            for i in range(1, 7):
+                depts.append(Department(dept_number=i, name_ar=f"القسم ({i})"))
+            session.add_all(depts)
+            session.commit()
+            
+        # إنشاء المدير
         if not session.query(User).filter_by(username="admin").first():
             hashed_pw = bcrypt.hashpw("12345".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             session.add(User(username="admin", full_name="المدير العام", password_hash=hashed_pw, role="admin"))
             session.commit()
+            
         session.close()
-    except: pass
+        return True, "تم إنشاء الجداول والحسابات بنجاح! يمكنك الدخول الآن."
+    except Exception as e:
+        return False, f"حدث خطأ أثناء التهيئة: {str(e)}"
 
 # --- الخدمات ---
 def auth_user(u, p):
@@ -113,7 +126,6 @@ def auth_user(u, p):
     return None
 
 def register_user(u, p, f, r, t_name, m_type):
-    # (نفس كود التسجيل السابق)
     s = SessionLocal()
     try:
         team = s.query(Team).filter(Team.name == t_name).first()
@@ -136,7 +148,7 @@ def add_work_service(uid, title, details_json, atype, cls, date_obj, pts):
     finally: s.close()
 
 def get_works_dataframe():
-    try: return pd.read_sql("SELECT * FROM works", engine) # (مبسط للعرض)
+    try: return pd.read_sql("SELECT * FROM works", engine) 
     except: return pd.DataFrame()
 
 # ==========================================
@@ -162,14 +174,12 @@ st.markdown("""
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
-    init_db()
 
 if not st.session_state['logged_in']:
-    # (كود تسجيل الدخول - لم يتغير)
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # الشعار والعنوان (كما طلبت سابقاً)
+        # الشعار
         logo_path = "logo.png"
         logo_html = '<div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>'
         if os.path.exists(logo_path):
@@ -193,12 +203,25 @@ if not st.session_state['logged_in']:
                     st.session_state['logged_in'] = True
                     st.session_state['user'] = {'id': user.id, 'name': user.full_name, 'role': user.role, 'team': user.team.name if user.team else ""}
                     st.rerun()
-                else: st.toast("خطأ في البيانات", icon="❌")
+                else: 
+                    st.toast("خطأ: تأكد من صحة البيانات أو قم بتهيئة النظام", icon="❌")
+        
+        # ⚠️ زر الإصلاح (اضغط عليه مرة واحدة فقط)
+        with st.expander("🛠️ إعدادات النظام (للمدير فقط)"):
+            st.warning("اضغط هنا فقط إذا كانت هذه أول مرة تشغل النظام أو إذا حذفت قاعدة البيانات.")
+            if st.button("تهيئة قاعدة البيانات (إنشاء الجداول)"):
+                with st.spinner("جاري إنشاء الجداول..."):
+                    success, msg = init_db_manual()
+                    if success:
+                        st.success(msg)
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error(msg)
 
 else:
     user = st.session_state['user']
     with st.sidebar:
-        # الشعار في السايدبار (كما طلبت)
         logo_path = "logo.png"
         sb_logo = ""
         if os.path.exists(logo_path):
@@ -225,7 +248,7 @@ else:
             st.rerun()
 
     # ==========================================
-    # 🌟 الصفحة المطورة: تسجيل نتاج جديد (شاملة)
+    # تسجيل نتاج جديد (متكامل)
     # ==========================================
     if selection == "تسجيل نتاج جديد":
         st.title("📝 إضافة نتاج علمي جديد")
@@ -233,146 +256,91 @@ else:
 
         if 'form_id' not in st.session_state: st.session_state['form_id'] = 0
 
-        # النموذج الرئيسي
         with st.form(key=f"work_form_{st.session_state['form_id']}"):
-            
-            # 1. البيانات الأساسية المشتركة
             st.subheader("1️⃣ البيانات الأساسية")
             col_main1, col_main2 = st.columns([2, 1])
-            with col_main1: 
-                w_title = st.text_input("العنوان الكامل للعمل (Title) *")
-            with col_main2: 
-                w_lang = st.selectbox("لغة العمل", ["العربية", "الإنجليزية", "الفرنسية"])
+            with col_main1: w_title = st.text_input("العنوان الكامل للعمل (Title) *")
+            with col_main2: w_lang = st.selectbox("لغة العمل", ["العربية", "الإنجليزية", "الفرنسية"])
 
             col_sub1, col_sub2 = st.columns(2)
             with col_sub1:
-                w_type = st.selectbox("نوع النشاط البحثي *", 
-                    ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"])
+                w_type = st.selectbox("نوع النشاط البحثي *", ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"])
             with col_sub2:
                 w_date = st.date_input("تاريخ النشر / المناقشة *")
 
             st.markdown("---")
-            
-            # 2. البيانات التفصيلية (ديناميكية حسب النوع)
             st.subheader(f"2️⃣ تفاصيل: {w_type}")
             
-            details_data = {"language": w_lang} # قاموس لتخزين التفاصيل
-            w_class = "غير مصنف" # قيمة افتراضية للتصنيف
-            w_points = 10 # نقاط افتراضية
+            details_data = {"language": w_lang}
+            w_class = "غير مصنف"
+            w_points = 10
 
-            # --- حالة: مقال علمي ---
             if w_type == "مقال في مجلة علمية":
                 c1, c2 = st.columns(2)
                 with c1:
-                    journal = st.text_input("اسم المجلة (Journal Name)")
-                    issn = st.text_input("الرقم التسلسلي (ISSN)")
-                    url_link = st.text_input("رابط المقال (URL)")
+                    journal = st.text_input("اسم المجلة")
+                    issn = st.text_input("ISSN")
+                    url_link = st.text_input("رابط المقال")
                 with c2:
                     w_class = st.selectbox("تصنيف المجلة", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4", "غير مصنف"])
-                    indexing = st.multiselect("الفهرسة (Indexing)", ["ASJP", "Scopus", "Web of Science", "Erih Plus"])
-                    vol_issue = st.text_input("المجلد (Vol) / العدد (No)")
-                
+                    indexing = st.multiselect("الفهرسة", ["ASJP", "Scopus", "Web of Science"])
+                    vol_issue = st.text_input("المجلد / العدد")
                 details_data.update({"journal": journal, "issn": issn, "indexing": indexing, "volume_issue": vol_issue, "url": url_link})
-                # حساب النقاط التقريبي
                 if w_class in ["A", "Q1"]: w_points = 100
                 elif w_class in ["B", "Q2"]: w_points = 75
                 elif w_class == "C": w_points = 50
                 else: w_points = 25
 
-            # --- حالة: مداخلة مؤتمر ---
             elif w_type == "مداخلة في مؤتمر":
                 c1, c2 = st.columns(2)
                 with c1:
-                    conf_name = st.text_input("اسم الملتقى / المؤتمر")
+                    conf_name = st.text_input("اسم الملتقى")
                     organizer = st.text_input("الجهة المنظمة")
                 with c2:
                     scope = st.selectbox("النطاق", ["وطني", "دولي"])
-                    part_type = st.selectbox("نوع المشاركة", ["شخصية (شفهية)", "عن بعد (Online)", "ملصق (Poster)"])
-                    location = st.text_input("مكان الانعقاد (المدينة/البلد)")
-                
-                details_data.update({"conference": conf_name, "organizer": organizer, "scope": scope, "participation": part_type, "location": location})
+                    location = st.text_input("المكان")
+                details_data.update({"conference": conf_name, "organizer": organizer, "scope": scope, "location": location})
                 w_class = scope
                 w_points = 50 if scope == "دولي" else 25
 
-            # --- حالة: كتاب أو فصل ---
             elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
                 c1, c2 = st.columns(2)
                 with c1:
                     publisher = st.text_input("دار النشر")
-                    isbn = st.text_input("الرقم الدولي (ISBN)")
+                    isbn = st.text_input("ISBN")
                 with c2:
-                    pages = st.text_input("عدد الصفحات / نطاق الصفحات")
-                    edition = st.text_input("رقم الطبعة / سنة الإصدار")
-                
-                details_data.update({"publisher": publisher, "isbn": isbn, "pages": pages, "edition": edition})
+                    pages = st.text_input("عدد الصفحات")
+                details_data.update({"publisher": publisher, "isbn": isbn, "pages": pages})
                 w_points = 80 if w_type == "تأليف كتاب" else 40
 
-            # --- حالة: براءة اختراع ---
-            elif w_type == "براءة اختراع":
-                c1, c2 = st.columns(2)
-                with c1:
-                    patent_num = st.text_input("رقم البراءة")
-                with c2:
-                    granting_body = st.text_input("الهيئة المانحة (مثل INAPI)")
-                
-                details_data.update({"patent_number": patent_num, "body": granting_body})
-                w_points = 150
-
-            # --- حالة: تأطير ---
-            elif w_type == "تأطير مذكرة":
-                c1, c2 = st.columns(2)
-                with c1:
-                    student_name = st.text_input("اسم الطالب المؤطر")
-                with c2:
-                    level = st.selectbox("المستوى", ["ماستر", "دكتوراه لمد", "دكتوراه علوم"])
-                
-                details_data.update({"student": student_name, "level": level})
-                w_points = 20
-
-            # --- حالة: مشروع بحث ---
             elif w_type == "مشروع بحث":
                 c1, c2 = st.columns(2)
                 with c1:
-                    proj_code = st.text_input("رمز المشروع (Code)")
-                    proj_role = st.selectbox("الصفة في المشروع", ["رئيس مشروع", "عضو"])
+                    proj_code = st.text_input("رمز المشروع")
+                    proj_role = st.selectbox("الصفة", ["رئيس مشروع", "عضو"])
                 with c2:
-                    proj_kind = st.selectbox("نوع المشروع", ["PRFU", "PNR", "CNEPRU", "تعاون دولي"])
-                
+                    proj_kind = st.selectbox("نوع المشروع", ["PRFU", "PNR", "CNEPRU"])
                 details_data.update({"code": proj_code, "role": proj_role, "kind": proj_kind})
                 w_points = 60
 
             st.markdown("---")
-            
-            # زر الحفظ
-            submit_btn = st.form_submit_button("💾 حفظ البيانات في السجل", type="primary", use_container_width=True)
-
-            if submit_btn:
+            if st.form_submit_button("💾 حفظ البيانات في السجل", type="primary", use_container_width=True):
                 if w_title:
-                    # تحويل التفاصيل لنص JSON
                     json_details = json.dumps(details_data, ensure_ascii=False)
-                    
-                    with st.spinner("جاري معالجة البيانات وحفظها..."):
-                        success = add_work_service(
-                            uid=user['id'],
-                            title=w_title,
-                            details_json=json_details,
-                            atype=w_type,
-                            cls=w_class,
-                            date_obj=w_date,
-                            pts=w_points
-                        )
-                        
-                        if success:
-                            st.toast("✅ تمت العملية بنجاح! تم حفظ النتاج.", icon="🎉")
+                    with st.spinner("جاري الحفظ..."):
+                        if add_work_service(user['id'], w_title, json_details, w_type, w_class, w_date, w_points):
+                            st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
                             time.sleep(1)
                             st.session_state['form_id'] += 1
                             st.rerun()
-                        else:
-                            st.toast("حدث خطأ أثناء الاتصال بقاعدة البيانات", icon="🚨")
-                else:
-                    st.toast("يرجى كتابة عنوان العمل على الأقل", icon="⚠️")
+                        else: st.toast("حدث خطأ أثناء الاتصال", icon="🚨")
+                else: st.toast("يرجى كتابة العنوان", icon="⚠️")
 
-    # (باقي الصفحات مثل "أعمالي" و "لوحة القيادة" تبقى كما هي أو يمكن تحسينها لاحقاً)
     elif selection == "أعمالي":
         st.title("👤 سجل أعمالي")
-        # يمكن إضافة كود عرض الجدول هنا
+        # عرض بسيط للأعمال
+        df = get_works_dataframe()
+        if not df.empty:
+             st.dataframe(df)
+        else:
+             st.info("لا توجد أعمال لعرضها")
