@@ -4,7 +4,6 @@ from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey,
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
 from datetime import date
-import plotly.express as px
 import time
 import json 
 import urllib.parse
@@ -72,7 +71,7 @@ class Work(Base):
     __tablename__ = "works"
     id = Column(Integer, primary_key=True)
     title = Column(Text)
-    details = Column(Text) # هنا نخزن التفاصيل الدقيقة JSON
+    details = Column(Text) 
     activity_type = Column(String)
     classification = Column(String)
     publication_date = Column(Date)
@@ -141,10 +140,10 @@ st.markdown("""
     h1, h2, h3, h4 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
     
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input, .stNumberInput input { text-align: right; direction: rtl; border-radius: 8px; }
     
-    /* تنسيق خاص للنماذج */
-    .stForm { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+    /* تنسيق خاص للنموذج لجعله يبدو كبطاقة */
+    [data-testid="stForm"] { background: white; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
     
     div[data-testid="stToast"] { direction: rtl; text-align: right; font-family: 'Cairo'; }
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
@@ -246,64 +245,63 @@ else:
             st.rerun()
 
     # ============================================
-    #  صفحة تسجيل نتاج علمي (النسخة الاحترافية)
+    #  🌟 الصفحة الديناميكية: تسجيل نتاج جديد
     # ============================================
     if selection == "تسجيل نتاج جديد":
         st.title("📝 تسجيل نتاج علمي جديد")
-        st.markdown("---")
         
+        # ⚠️ هام: هذا المتغير خارج الـ Form ليعمل التحديث اللحظي
+        st.markdown("### 1️⃣ نوع النشاط البحثي")
+        w_type = st.selectbox(
+            "اختر نوع النشاط لتخصيص الحقول:", 
+            ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"]
+        )
+        
+        st.markdown("---")
+        st.markdown(f"### 2️⃣ تفاصيل {w_type}")
+
         if 'form_id' not in st.session_state: st.session_state['form_id'] = 0
         
+        # بداية النموذج
         with st.form(key=f"work_form_{st.session_state['form_id']}"):
             
-            # --- القسم 1: البيانات الأساسية ---
-            st.markdown("##### 📌 البيانات العامة للعمل")
+            # --- البيانات المشتركة ---
             col_main1, col_main2 = st.columns([3, 1])
             with col_main1:
-                w_title = st.text_input("العنوان الكامل (Title) *")
+                w_title = st.text_input("العنوان الكامل للعمل (Title) *")
             with col_main2:
-                w_lang = st.selectbox("لغة العمل", ["العربية", "الإنجليزية", "الفرنسية"])
-
-            col_sub1, col_sub2 = st.columns(2)
-            with col_sub1:
-                w_type = st.selectbox("نوع النشاط البحثي *", 
-                    ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"])
-            with col_sub2:
                 w_date = st.date_input("تاريخ النشر / المناقشة *")
+            
+            w_lang = st.selectbox("لغة العمل", ["العربية", "الإنجليزية", "الفرنسية"])
 
-            st.markdown("---")
-            
-            # --- القسم 2: التفاصيل الديناميكية (Dynamic Fields) ---
-            st.markdown(f"##### 📄 تفاصيل خاصة بـ: {w_type}")
-            
+            # --- البيانات الديناميكية (حسب الاختيار الخارجي) ---
             details_data = {"language": w_lang}
             w_class = "غير مصنف"
             w_points = 10
 
-            # 1. حالة المقال العلمي
+            # 1. مقال
             if w_type == "مقال في مجلة علمية":
                 c1, c2 = st.columns(2)
                 with c1:
-                    journal = st.text_input("اسم المجلة (Journal Name)")
+                    journal = st.text_input("اسم المجلة (Journal Name) *")
                     issn = st.text_input("الرقم التسلسلي (ISSN)")
                     url_link = st.text_input("رابط المقال (URL)")
                 with c2:
                     w_class = st.selectbox("تصنيف المجلة", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4", "غير مصنف"])
-                    indexing = st.multiselect("القواعد المفهرسة (Indexing)", ["ASJP", "Scopus", "Web of Science", "Erih Plus"])
+                    indexing = st.multiselect("القواعد المفهرسة", ["ASJP", "Scopus", "Web of Science", "Erih Plus"])
                     vol_issue = st.text_input("المجلد (Vol) / العدد (No)")
                 
                 details_data.update({"journal": journal, "issn": issn, "indexing": indexing, "volume_issue": vol_issue, "url": url_link})
-                # حساب النقاط التقريبي
                 if w_class in ["A", "Q1"]: w_points = 100
                 elif w_class in ["B", "Q2"]: w_points = 75
                 elif w_class == "C": w_points = 50
                 else: w_points = 25
 
-            # 2. حالة المداخلة (مؤتمر)
+            # 2. مداخلة
             elif w_type == "مداخلة في مؤتمر":
                 c1, c2 = st.columns(2)
                 with c1:
-                    conf_name = st.text_input("اسم التظاهرة العلمية")
+                    conf_name = st.text_input("اسم الملتقى / المؤتمر *")
                     organizer = st.text_input("الجهة المنظمة")
                 with c2:
                     scope = st.selectbox("النطاق", ["وطني", "دولي"])
@@ -314,11 +312,11 @@ else:
                 w_class = scope
                 w_points = 50 if scope == "دولي" else 25
 
-            # 3. حالة الكتاب
+            # 3. كتاب
             elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
                 c1, c2 = st.columns(2)
                 with c1:
-                    publisher = st.text_input("دار النشر")
+                    publisher = st.text_input("دار النشر *")
                     isbn = st.text_input("الرقم الدولي (ISBN)")
                 with c2:
                     pages = st.text_input("عدد الصفحات / نطاق الصفحات")
@@ -327,36 +325,36 @@ else:
                 details_data.update({"publisher": publisher, "isbn": isbn, "pages": pages, "edition": edition})
                 w_points = 80 if w_type == "تأليف كتاب" else 40
 
-            # 4. حالة براءة الاختراع
+            # 4. براءة اختراع
             elif w_type == "براءة اختراع":
                 c1, c2 = st.columns(2)
                 with c1:
-                    patent_num = st.text_input("رقم البراءة")
+                    patent_num = st.text_input("رقم البراءة *")
                 with c2:
                     granting_body = st.text_input("الهيئة المانحة (مثل INAPI)")
                 
                 details_data.update({"patent_number": patent_num, "body": granting_body})
                 w_points = 150
 
-            # 5. حالة مشروع البحث
+            # 5. مشروع
             elif w_type == "مشروع بحث":
                 c1, c2 = st.columns(2)
                 with c1:
-                    proj_code = st.text_input("رمز المشروع (Code)")
+                    proj_code = st.text_input("رمز المشروع (Code) *")
                     proj_role = st.selectbox("صفتك في المشروع", ["رئيس مشروع", "عضو"])
                 with c2:
-                    proj_kind = st.selectbox("نوع المشروع", ["PRFU", "PNR", "CNEPRU", "شراكة دولية"])
+                    proj_kind = st.selectbox("نوع المشروع", ["PRFU", "PNR", "CNEPRU", "تعاون دولي"])
                 
                 details_data.update({"code": proj_code, "role": proj_role, "kind": proj_kind})
                 w_points = 60
 
-            # 6. حالة التأطير
+            # 6. تأطير
             elif w_type == "تأطير مذكرة":
                 c1, c2 = st.columns(2)
                 with c1:
-                    student_name = st.text_input("اسم الطالب")
+                    student_name = st.text_input("اسم الطالب المؤطر *")
                 with c2:
-                    level = st.selectbox("المستوى", ["ماستر", "دكتوراه"])
+                    level = st.selectbox("المستوى", ["ماستر", "دكتوراه لمد", "دكتوراه علوم"])
                 details_data.update({"student": student_name, "level": level})
                 w_points = 20
 
@@ -372,54 +370,46 @@ else:
                             time.sleep(1)
                             st.session_state['form_id'] += 1
                             st.rerun()
-                        else: st.toast("حدث خطأ", icon="🚨")
+                        else: st.toast("حدث خطأ أثناء الاتصال", icon="🚨")
                 else: st.toast("يرجى كتابة العنوان", icon="⚠️")
 
     # ============================================
-    #  صفحة لوحة القيادة (للمدير)
+    #  باقي الصفحات (كما هي)
     # ============================================
     elif selection == "لوحة القيادة":
         st.title("📊 لوحة القيادة العامة")
-        df = pd.read_sql("SELECT * FROM works", engine)
-        if not df.empty:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("إجمالي الأعمال", len(df))
-            c2.metric("عدد الباحثين", df["user_id"].nunique())
-            c3.metric("مجموع النقاط", df["points"].sum())
-            c4.metric("آخر نشاط", df["year"].max())
-            st.markdown("---")
-            col_g1, col_g2 = st.columns(2)
-            with col_g1:
-                st.subheader("توزيع الأنشطة")
-                fig1 = px.pie(df, names='activity_type', hole=0.5)
-                st.plotly_chart(fig1, use_container_width=True)
-            with col_g2:
-                st.subheader("التطور السنوي")
-                yc = df.groupby('year').size().reset_index(name='count')
-                fig2 = px.bar(yc, x='year', y='count')
-                st.plotly_chart(fig2, use_container_width=True)
-        else:
-            st.info("لا توجد بيانات كافية.")
+        try:
+            df = pd.read_sql("SELECT * FROM works", engine)
+            if not df.empty:
+                c1, c2, c3 = st.columns(3)
+                c1.metric("إجمالي الأعمال", len(df))
+                c2.metric("مجموع النقاط", df["points"].sum())
+                c3.metric("الباحثون", df["user_id"].nunique())
+                
+                col_g1, col_g2 = st.columns(2)
+                with col_g1:
+                    fig1 = px.pie(df, names='activity_type', title='توزيع الأنشطة')
+                    st.plotly_chart(fig1, use_container_width=True)
+                with col_g2:
+                    yc = df.groupby('year').size().reset_index(name='count')
+                    fig2 = px.bar(yc, x='year', y='count', title='التطور السنوي')
+                    st.plotly_chart(fig2, use_container_width=True)
+            else: st.info("لا توجد بيانات.")
+        except: st.error("خطأ في جلب البيانات")
 
-    # ============================================
-    #  صفحة سجل أعمالي
-    # ============================================
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
-        query = f"SELECT * FROM works WHERE user_id = {user['id']} ORDER BY publication_date DESC"
-        my_df = pd.read_sql(query, engine)
-        
-        if not my_df.empty:
-            # تحسين عرض الجدول
-            display_df = my_df[['title', 'activity_type', 'classification', 'publication_date', 'points']].copy()
-            display_df.columns = ['العنوان', 'النوع', 'التصنيف', 'التاريخ', 'النقاط']
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info("لم تقم بإضافة أي أعمال بعد.")
+        try:
+            query = f"SELECT * FROM works WHERE user_id = {user['id']} ORDER BY publication_date DESC"
+            my_df = pd.read_sql(query, engine)
+            if not my_df.empty:
+                # تحسين العرض
+                view_df = my_df[['title', 'activity_type', 'classification', 'publication_date', 'points']].copy()
+                view_df.columns = ['العنوان', 'النوع', 'التصنيف', 'التاريخ', 'النقاط']
+                st.dataframe(view_df, use_container_width=True)
+            else: st.info("لم تقم بإضافة أي أعمال بعد.")
+        except: pass
 
-    # ============================================
-    #  صفحة الملف الشخصي
-    # ============================================
     elif selection == "الملف الشخصي":
         st.title("👤 الملف الشخصي")
         with st.container(border=True):
@@ -430,11 +420,7 @@ else:
                 st.subheader(user['name'])
                 st.write(f"**الرتبة:** {user['role']}")
                 st.write(f"**الفرقة:** {user['team']}")
-                st.write(f"**اسم المستخدم:** {st.session_state['user'].get('username', '---')}")
 
-    # ============================================
-    #  صفحة الإعدادات
-    # ============================================
     elif selection == "الإعدادات":
         st.title("⚙️ الإعدادات")
         with st.container(border=True):
@@ -445,9 +431,7 @@ else:
                 if st.form_submit_button("تحديث"):
                     if p1 == p2 and len(p1) > 0:
                         if change_password(user['id'], p1):
-                            st.success("تم تغيير كلمة المرور بنجاح.")
-                            time.sleep(2)
-                            st.session_state['logged_in'] = False
-                            st.rerun()
-                        else: st.error("حدث خطأ")
+                            st.success("تم التغيير بنجاح.")
+                            time.sleep(2); st.session_state['logged_in'] = False; st.rerun()
+                        else: st.error("خطأ")
                     else: st.warning("كلمات المرور غير متطابقة")
