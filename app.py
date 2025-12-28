@@ -13,7 +13,7 @@ import io
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
-    page_title="المركز البحثي أدرار",
+    page_title="بوابة البحث العلمي - URSH",
     layout="wide",
     initial_sidebar_state="expanded",
     page_icon="🎓"
@@ -101,26 +101,31 @@ class Work(Base):
 def auto_init_system():
     try:
         inspector = inspect(engine)
+        # إذا لم يكن جدول المستخدمين موجوداً، نعيد بناء كل شيء
         if not inspector.has_table("users"):
             Base.metadata.create_all(bind=engine)
+            
         session = SessionLocal()
+        # التحقق من وجود المدير
         if not session.query(User).filter_by(username="admin").first():
-            # إنشاء الهيكل الأساسي
+            # 1. إنشاء الأقسام
             depts_data = ["الدراسات السوسيولوجية", "علم النفس", "علوم التربية", "الأرطوفونيا", "الفلسفة", "التاريخ"]
             for name in depts_data:
                 if not session.query(Department).filter_by(name_ar=name).first():
                     d = Department(name_ar=name)
                     session.add(d)
-                    session.flush()
+                    session.flush() # للحصول على ID
+                    # إنشاء فرقة افتراضية
                     session.add(Team(name=f"فرقة بحث {name}", department_id=d.id))
             
+            # 2. إنشاء المدير
             pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
             session.add(User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin"))
             session.commit()
         session.close()
     except Exception: pass
 
-auto_init_system()
+auto_init_system() # تشغيل تلقائي عند البداية
 
 def auth_user(u, p):
     s = SessionLocal()
@@ -188,7 +193,11 @@ def get_img_as_base64(file_path):
 
 def get_smart_data(user):
     base_q = """
-    SELECT w.*, u.full_name, t.name as team_name, d.name_ar as dept_name
+    SELECT 
+        w.id, w.title, w.activity_type, w.publication_date, w.year, w.points, w.classification, w.details,
+        u.full_name as researcher, 
+        t.name as team, 
+        d.name_ar as department
     FROM works w
     JOIN users u ON w.user_id = u.id
     LEFT JOIN teams t ON u.team_id = t.id
@@ -196,57 +205,76 @@ def get_smart_data(user):
     """
     try:
         df = pd.read_sql(base_q, engine)
+        
+        # ✅ معالجة القيم الفارغة لمنع أخطاء الرسوم البيانية
+        df['department'] = df['department'].fillna('غير محدد')
+        df['team'] = df['team'].fillna('غير محدد')
+        df['activity_type'] = df['activity_type'].fillna('غير محدد')
+        
         if df.empty: return df
+        
+        # 🛡️ تطبيق الفلاتر الأمنية حسب الدور
         if user.role == 'admin': return df
         elif user.role == 'dept_head': 
-            if user.department: return df[df['dept_name'] == user.department.name_ar]
-            return df[df['dept_name'] == 'xxxx']
+            if user.department: return df[df['department'] == user.department.name_ar]
+            return pd.DataFrame() # إذا لم يكن له قسم
         elif user.role == 'leader': 
-            if user.team: return df[df['team_name'] == user.team.name]
-            return df[df['team_name'] == 'xxxx']
+            if user.team: return df[df['team'] == user.team.name]
+            return pd.DataFrame()
         else: return df[df['user_id'] == user.id]
-    except: return pd.DataFrame()
+    except Exception as e: 
+        return pd.DataFrame()
 
-# 🆕 دالة تحويل البيانات لملف Excel
+# 📊 دالة تصدير Excel
 def to_excel(df):
     output = io.BytesIO()
-    # تنظيف البيانات قبل التصدير (إزالة أعمدة غير هامة)
     export_df = df.copy()
+    # تنظيف التفاصيل للعرض
     if 'details' in export_df.columns:
-        # محاولة استخراج معلومات مفيدة من JSON
-        export_df['تفاصيل_إضافية'] = export_df['details'].apply(lambda x: " | ".join([f"{k}:{v}" for k,v in json.loads(x).items()]) if x else "")
+        export_df['تفاصيل'] = export_df['details'].apply(lambda x: " | ".join([f"{k}:{v}" for k,v in json.loads(x).items() if v]) if x else "")
     
-    cols_map = {
-        'title': 'العنوان', 'activity_type': 'النوع', 'publication_date': 'التاريخ', 
-        'points': 'النقاط', 'full_name': 'الباحث', 'team_name': 'الفرقة', 'dept_name': 'القسم'
-    }
+    cols_map = {'title': 'العنوان', 'activity_type': 'النوع', 'publication_date': 'التاريخ', 'points': 'النقاط', 'researcher': 'الباحث', 'team': 'الفرقة'}
     export_df = export_df.rename(columns=cols_map)
-    # الاحتفاظ بالأعمدة العربية فقط
-    final_cols = [c for c in cols_map.values() if c in export_df.columns] + ['تفاصيل_إضافية']
-    export_df = export_df[final_cols]
+    final_cols = [c for c in cols_map.values() if c in export_df.columns] + ['تفاصيل']
+    export_df = export_df[final_cols] if not export_df.empty else export_df
     
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         export_df.to_excel(writer, index=False, sheet_name='التقرير')
     return output.getvalue()
 
 # ==========================================
-# 4. التنسيق (CSS)
+# 4. التنسيق (CSS) - المحسن والمطابق للصور
 # ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
     :root { --primary: #2563eb; --bg: #f8fafc; }
+    
     html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: #fcfcfc; text-align: right; }
     h1, h2, h3, h4 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
+    
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
-    .kpi-container { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; border-right: 4px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; transition: transform 0.2s; }
+    
+    /* بطاقات KPI */
+    .kpi-container {
+        background-color: white; padding: 20px; border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
+        border-right: 4px solid #3b82f6;
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 10px; transition: transform 0.2s;
+    }
     .kpi-container:hover { transform: translateY(-3px); }
     .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
     .kpi-label { font-family: 'Tajawal'; font-size: 13px; color: #64748b; font-weight: 600; }
     .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
+    
+    /* حاويات الرسوم */
     .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
+    
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
+    
+    /* تحسين شكل النموذج */
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
 </style>
 """, unsafe_allow_html=True)
@@ -257,21 +285,23 @@ st.markdown("""
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
+# --- شاشة الدخول ---
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
-        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        # محاولة تحميل الشعار
         logo_path = "logo.png"
-        logo_html = '<div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>'
+        logo_html = '<div style="font-size: 60px; margin-bottom: 10px; text-align:center;">🏛️</div>'
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
-            if img: logo_html = f'<img src="data:image/png;base64,{img}" style="width: 180px; margin-bottom: 20px;">'
+            if img: logo_html = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 150px; margin-bottom: 20px;"></div>'
 
-        st.markdown(f"""
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; margin-bottom: 30px;">
-            {logo_html}
-            <h1 style="color:#1e40af; font-family:'Cairo'; margin: 0; text-align: center !important;">بوابة البحث العلمي</h1>
-            <p style="color:#64748b; text-align: center !important;">نظام إدارة المخابر الجامعية الموحد</p>
+        st.markdown(logo_html, unsafe_allow_html=True)
+        st.markdown("""
+        <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1>
+            <p style="color:#64748b;">نظام إدارة المخابر الجامعية الموحد</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -284,9 +314,11 @@ if not st.session_state['logged_in']:
                     st.session_state['logged_in'] = True
                     st.session_state['user_id'] = user.id
                     st.rerun()
-                else: st.toast("بيانات خاطئة", icon="❌")
+                else: st.error("اسم المستخدم أو كلمة المرور غير صحيحة")
 
+# --- النظام الداخلي ---
 else:
+    # إعادة تحميل بيانات المستخدم من الـ ID لضمان التحديث
     session = SessionLocal()
     user = session.query(User).options(joinedload(User.team), joinedload(User.department)).filter(User.id == st.session_state['user_id']).first()
     
@@ -295,17 +327,18 @@ else:
         sb_logo = ""
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
-            if img: sb_logo = f'<img src="data:image/png;base64,{img}" style="width: 140px; margin-bottom: 15px;">'
+            if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
         
-        st.markdown(f"""<div style="text-align: center;">{sb_logo}<h3 style="color:#1e3a8a; font-family:'Cairo';">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
+        st.markdown(sb_logo, unsafe_allow_html=True)
+        st.markdown(f"""<div style="text-align: center; margin-bottom: 20px;"><h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0;">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
         
         role_map = {"admin": "المدير العام", "dept_head": "رئيس قسم", "leader": "رئيس فرقة", "researcher": "باحث"}
-        st.info(f"👤 {user.full_name}\n\n🏷️ {role_map.get(user.role, user.role)}")
+        st.info(f"👤 مرحباً: {user.full_name}\n\n🏷️ الصلاحية: {role_map.get(user.role, user.role)}")
         
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
-            "إدارة الأنشطة": "🗂️ إدارة الأنشطة (تعديل/حذف)",
             "تسجيل نتاج": "📝 تسجيل نتاج جديد",
+            "إدارة الأنشطة": "🗂️ إدارة الأنشطة (تعديل/حذف)",
             "أعمالي": "📂 سجل أعمالي",
             "الإعدادات": "⚙️ الإعدادات"
         }
@@ -314,147 +347,161 @@ else:
         sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
         selection = [k for k, v in menu.items() if v == sel][0]
         
-        if st.button("خروج"):
+        st.markdown("---")
+        if st.button("تسجيل الخروج"):
             st.session_state['logged_in'] = False
             st.rerun()
 
     # ============================================
-    #  1. لوحة القيادة
+    #  1. لوحة القيادة (المحسنة)
     # ============================================
     if selection == "لوحة القيادة":
-        st.markdown(f"## 📊 لوحة القيادة")
+        st.markdown(f"## 📊 لوحة القيادة العامة")
+        
+        # جلب البيانات المفلترة حسب الدور
         df = get_smart_data(user)
         
         if not df.empty:
-            # 🆕 زر التصدير (Export)
-            excel_data = to_excel(df)
-            st.download_button(
-                label="📥 تحميل التقرير الكامل (Excel)",
-                data=excel_data,
-                file_name=f'report_{date.today()}.xlsx',
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            )
+            # زر التصدير
+            excel_file = to_excel(df)
+            st.download_button("📥 تحميل التقرير (Excel)", excel_file, f"report_{date.today()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
+            # البطاقات
             k1, k2, k3, k4 = st.columns(4)
-            with k4: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{len(df)}</div><div class="kpi-label">الأعمال</div></div><div class="kpi-icon">📚</div></div>', unsafe_allow_html=True)
+            with k4: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{len(df)}</div><div class="kpi-label">إجمالي النتاج</div></div><div class="kpi-icon">📚</div></div>', unsafe_allow_html=True)
             with k3: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["user_id"].nunique()}</div><div class="kpi-label">الباحثون</div></div><div class="kpi-icon">👥</div></div>', unsafe_allow_html=True)
             with k2: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["points"].sum()}</div><div class="kpi-label">النقاط</div></div><div class="kpi-icon">⭐</div></div>', unsafe_allow_html=True)
             with k1: 
                 yr = df['year'].mode()[0] if not df.empty else "-"
                 st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">السنة النشطة</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
 
+            # الرسوم البيانية
             c1, c2 = st.columns(2)
             with c1:
-                fig = px.pie(df, names='activity_type', title="توزيع الأنشطة", hole=0.5, color_discrete_sequence=px.colors.sequential.Blues_r)
-                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                st.markdown("##### 📊 توزيع الأنشطة")
+                try:
+                    fig = px.pie(df, names='activity_type', hole=0.5, color_discrete_sequence=px.colors.sequential.Blues_r)
+                    st.plotly_chart(fig, use_container_width=True)
+                except: st.caption("بيانات غير كافية للرسم")
+                st.markdown('</div>', unsafe_allow_html=True)
+                
             with c2:
-                daily = df.groupby('year').size().reset_index(name='count')
-                fig2 = px.bar(daily, x='year', y='count', title="التطور السنوي", text_auto=True)
-                st.plotly_chart(fig2, use_container_width=True)
-        else: st.info("لا توجد بيانات.")
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                st.markdown("##### 📈 التطور السنوي")
+                try:
+                    daily = df.groupby('year').size().reset_index(name='count')
+                    fig2 = px.bar(daily, x='year', y='count', text_auto=True, color_discrete_sequence=['#2563eb'])
+                    st.plotly_chart(fig2, use_container_width=True)
+                except: st.caption("بيانات غير كافية للرسم")
+                st.markdown('</div>', unsafe_allow_html=True)
+        else: st.info("لا توجد بيانات متاحة لعرضها.")
 
     # ============================================
-    #  2. تسجيل نتاج (الديناميكي الكامل)
+    #  2. تسجيل نتاج (الديناميكية المصلحة) ✅
     # ============================================
     elif selection == "تسجيل نتاج":
         st.title("📝 تسجيل نتاج علمي جديد")
         
-        # اختيار النوع خارج النموذج (للتحديث الفوري)
-        w_type = st.selectbox("📌 نوع النشاط", ACTIVITY_TYPES)
-        st.markdown("---")
+        # 1. الاختيار خارج الـ Form (الحل الجذري)
+        st.markdown("##### 1️⃣ اختر نوع النشاط لتخصيص الحقول:")
+        w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
         
+        st.markdown("---")
+        st.markdown(f"##### 2️⃣ تفاصيل: {w_type}")
+        
+        # استخدام مفتاح زمني لتفريغ النموذج بعد الحفظ
         if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
         
-        with st.form(key=f"f_{st.session_state['fid']}"):
-            c1, c2 = st.columns([3, 1])
-            title = c1.text_input("العنوان الكامل *", key=f"t_{w_type}")
-            date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
-            lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
+        with st.form(key=f"w_form_{st.session_state['fid']}"):
+            col_a, col_b = st.columns([3, 1])
+            title = col_a.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
+            d_date = col_b.date_input("التاريخ *", key=f"d_{w_type}")
             
-            st.markdown(f"**📄 تفاصيل: {w_type}**")
-            details = {"lang": lang}
+            # حقول ديناميكية حسب الاختيار الخارجي
+            details = {}
             pts, cls = 10, "غير مصنف"
-
-            # الحقول الديناميكية
+            
             if w_type == "مقال في مجلة علمية":
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    j = st.text_input("اسم المجلة", key=f"jn_{w_type}")
+                c1, c2 = st.columns(2)
+                with c1:
+                    j = st.text_input("اسم المجلة *", key=f"jn_{w_type}")
                     issn = st.text_input("ISSN", key=f"is_{w_type}")
-                with col_b:
+                with c2:
                     cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"], key=f"cl_{w_type}")
-                    idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "Web of Science"], key=f"ix_{w_type}")
+                    idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"], key=f"ix_{w_type}")
                 details.update({"journal": j, "issn": issn, "indexing": idx})
                 pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
 
             elif w_type == "مداخلة في مؤتمر":
-                conf = st.text_input("اسم الملتقى", key=f"cn_{w_type}")
-                scope = st.selectbox("النطاق", ["وطني", "دولي"], key=f"sc_{w_type}")
-                details.update({"conf": conf, "scope": scope})
+                c1, c2 = st.columns(2)
+                with c1:
+                    conf = st.text_input("اسم الملتقى *", key=f"cn_{w_type}")
+                    org = st.text_input("الجهة المنظمة", key=f"og_{w_type}")
+                with c2:
+                    scope = st.selectbox("النطاق", ["وطني", "دولي"], key=f"sc_{w_type}")
+                    loc = st.text_input("المكان", key=f"lc_{w_type}")
+                details.update({"conf": conf, "organizer": org, "scope": scope, "location": loc})
                 pts = 50 if scope == "دولي" else 25
 
-            elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
-                pub = st.text_input("دار النشر", key=f"pb_{w_type}")
-                isbn = st.text_input("ISBN", key=f"sb_{w_type}")
+            elif w_type == "تأليف كتاب":
+                c1, c2 = st.columns(2)
+                with c1:
+                    pub = st.text_input("دار النشر", key=f"pb_{w_type}")
+                with c2:
+                    isbn = st.text_input("ISBN", key=f"sb_{w_type}")
                 details.update({"publisher": pub, "isbn": isbn})
                 pts = 80
 
-            if st.form_submit_button("💾 حفظ البيانات"):
+            # زر الحفظ
+            if st.form_submit_button("💾 حفظ البيانات", type="primary", use_container_width=True):
                 if title:
-                    add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
-                    st.toast("تم الحفظ!", icon="✅"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
-                else: st.error("العنوان مطلوب")
+                    add_work_service(user.id, title, json.dumps(details), w_type, cls, d_date, pts)
+                    st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
+                    time.sleep(1)
+                    st.session_state['fid'] = int(time.time()) # إعادة تعيين النموذج
+                    st.rerun()
+                else: st.warning("يرجى إدخال عنوان العمل")
 
     # ============================================
-    #  3. إدارة الأنشطة (بحث + تعديل + حذف)
+    #  3. إدارة الأنشطة (بحث + تعديل)
     # ============================================
     elif selection == "إدارة الأنشطة":
         st.title("🗂️ إدارة الأنشطة البحثية")
         
-        # 🆕 شريط البحث
-        search_term = st.text_input("🔎 بحث (العنوان، اسم الباحث، النوع)...")
-        
+        search = st.text_input("🔎 ابحث عن عمل (العنوان، الباحث)...")
         df = get_smart_data(user)
+        
         if not df.empty:
-            # تصفية الجدول بناءً على البحث
-            if search_term:
-                df = df[df['title'].str.contains(search_term, na=False) | 
-                        df['full_name'].str.contains(search_term, na=False) |
-                        df['activity_type'].str.contains(search_term, na=False)]
+            if search:
+                df = df[df['title'].str.contains(search, na=False) | df['researcher'].str.contains(search, na=False)]
             
-            st.info(f"عدد النتائج: {len(df)}")
+            st.info(f"النتائج: {len(df)}")
             
             for i, row in df.iterrows():
-                # استخراج التفاصيل لعرضها
-                det_txt = ""
-                try: 
-                    d = json.loads(row['details'])
-                    det_txt = " | ".join([f"{k}: {v}" for k, v in d.items() if v])
-                except: pass
-
-                with st.expander(f"{row['activity_type']} - {row['title']} (👤 {row['full_name']})"):
-                    st.caption(f"📅 {row['publication_date']} | ⭐ {row['points']} نقطة | 🏷️ {det_txt}")
-                    
+                with st.expander(f"{row['activity_type']} | {row['title']} (👤 {row['researcher']})"):
                     c1, c2 = st.columns([3, 1])
-                    new_t = c1.text_input("تعديل العنوان", row['title'], key=f"et_{row['id']}")
-                    new_d = c2.date_input("تعديل التاريخ", pd.to_datetime(row['publication_date']).date(), key=f"ed_{row['id']}")
+                    nt = c1.text_input("تعديل العنوان", row['title'], key=f"edt_{row['id']}")
+                    nd = c2.date_input("تعديل التاريخ", pd.to_datetime(row['publication_date']).date(), key=f"edd_{row['id']}")
                     
                     b1, b2 = st.columns(2)
                     if b1.button("حفظ التعديلات", key=f"sv_{row['id']}"):
-                        update_work_service(row['id'], new_t, new_d); st.toast("تم التعديل"); time.sleep(1); st.rerun()
+                        update_work_service(row['id'], nt, nd); st.toast("تم التعديل"); time.sleep(1); st.rerun()
                     if b2.button("حذف نهائي", key=f"dl_{row['id']}"):
                         delete_work_service(row['id']); st.toast("تم الحذف"); time.sleep(1); st.rerun()
         else: st.info("لا توجد بيانات.")
 
     # ============================================
-    #  4. إدارة المستخدمين (Admin)
+    #  4. إدارة المستخدمين (للمدير)
     # ============================================
     elif selection == "إدارة المستخدمين":
         st.title("👥 إدارة المستخدمين")
+        
         with st.form("add_u"):
+            st.subheader("إضافة حساب مسؤول / باحث")
             c1, c2 = st.columns(2)
             name = c1.text_input("الاسم الكامل")
-            uname = c2.text_input("اسم الدخول")
+            uname = c2.text_input("اسم الدخول (Unique)")
             pas = st.text_input("كلمة المرور", type="password")
             role = st.selectbox("الصفة", ["رئيس قسم", "رئيس فرقة", "باحث"])
             
@@ -469,23 +516,25 @@ else:
                 if t_map:
                     sel_t = st.selectbox("الفرقة", list(t_map.keys()))
                     sel_t_id = t_map[sel_t]
+                else: st.warning("لا توجد فرق في هذا القسم")
             
-            if st.form_submit_button("إضافة"):
+            if st.form_submit_button("إضافة المستخدم"):
                 r_code = "dept_head" if role == "رئيس قسم" else ("leader" if role == "رئيس فرقة" else "researcher")
                 if add_user_service(uname, name, pas, r_code, sel_t_id, d_map.get(sel_d)):
-                    st.success("تمت الإضافة")
-                else: st.error("خطأ (ربما المستخدم مكرر)")
+                    st.success("تمت الإضافة بنجاح")
+                else: st.error("خطأ: اسم المستخدم موجود مسبقاً")
 
+    # --- صفحات العرض ---
     elif selection == "أعمالي":
-        st.title("📂 أعمالي")
+        st.title("📂 سجل أعمالي")
         df = get_smart_data(user)
-        df_my = df[df['user_id'] == user.id]
-        if not df_my.empty: st.dataframe(df_my[['title', 'activity_type', 'points']])
-        else: st.info("لا توجد أعمال")
+        my_df = df[df['user_id'] == user.id]
+        if not my_df.empty: st.dataframe(my_df[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
+        else: st.info("لا توجد أعمال مسجلة لك.")
 
     elif selection == "الإعدادات":
         st.title("⚙️ الإعدادات")
         with st.form("pwd"):
             p = st.text_input("كلمة المرور الجديدة", type="password")
             if st.form_submit_button("تغيير"):
-                change_password(user.id, p); st.success("تم")
+                change_password(user.id, p); st.success("تم التغيير")
