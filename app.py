@@ -3,13 +3,14 @@ import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
-from datetime import date
+from datetime import date, timedelta
 import plotly.express as px
 import time
 import json 
 import urllib.parse
 import base64
 import os
+import random # لتوليد بيانات عشوائية
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -81,6 +82,89 @@ class Work(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     researcher = relationship("User", back_populates="works")
 
+# ==========================================
+# 🚀 3. دالة توليد البيانات الاختبارية (Seeding)
+# ==========================================
+def init_db_with_seed():
+    try:
+        Base.metadata.create_all(bind=engine)
+        session = SessionLocal()
+        
+        # 1. التحقق من وجود الأقسام (إذا لم توجد، ننشئها)
+        if not session.query(Department).first():
+            dept_names = [
+                "قسم الدراسات السوسيولوجية", "قسم علم النفس", "قسم علوم التربية",
+                "قسم الأرطوفونيا", "قسم الفلسفة", "قسم التاريخ والآثار"
+            ]
+            depts = [Department(name_ar=name) for name in dept_names]
+            session.add_all(depts)
+            session.commit()
+            
+            # 2. إنشاء الفرق لكل قسم
+            all_depts = session.query(Department).all()
+            for dept in all_depts:
+                # إنشاء فرقتين لكل قسم
+                t1 = Team(name=f"فرقة البحث {dept.id}-أ", department_id=dept.id)
+                t2 = Team(name=f"فرقة البحث {dept.id}-ب", department_id=dept.id)
+                session.add_all([t1, t2])
+            session.commit()
+
+            # 3. إنشاء باحثين لكل فرقة
+            all_teams = session.query(Team).all()
+            password = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
+            
+            researchers = []
+            for team in all_teams:
+                # باحث دائم
+                u1 = User(username=f"res_{team.id}_1", full_name=f"د. باحث {team.id}-أ", password_hash=password, role="researcher", team_id=team.id, member_type="permanent")
+                # طالب دكتوراه
+                u2 = User(username=f"doc_{team.id}_2", full_name=f"طالب {team.id}-ب", password_hash=password, role="researcher", team_id=team.id, member_type="phd_student")
+                researchers.extend([u1, u2])
+            
+            # إضافة المدير
+            admin = User(username="admin", full_name="المدير العام", password_hash=password, role="admin", member_type="admin")
+            researchers.append(admin)
+            
+            session.add_all(researchers)
+            session.commit()
+
+            # 4. توليد نتاج علمي (أعمال) للباحثين
+            all_users = session.query(User).filter(User.role != 'admin').all()
+            works = []
+            types = ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب"]
+            
+            for user in all_users:
+                # إضافة 2-4 أعمال لكل باحث بشكل عشوائي
+                for _ in range(random.randint(2, 4)):
+                    w_type = random.choice(types)
+                    w_year = random.choice([2023, 2024, 2025])
+                    w_date = date(w_year, random.randint(1, 12), random.randint(1, 28))
+                    
+                    points = 0
+                    if w_type == "مقال في مجلة علمية": points = 100
+                    elif w_type == "مداخلة في مؤتمر": points = 50
+                    else: points = 80
+                    
+                    w = Work(
+                        title=f"بحث تجريبي حول {w_type} رقم {random.randint(100,999)}",
+                        details='{"lang":"العربية"}',
+                        activity_type=w_type,
+                        classification="A" if points == 100 else "B",
+                        publication_date=w_date,
+                        year=w_year,
+                        points=points,
+                        user_id=user.id
+                    )
+                    works.append(w)
+            
+            session.add_all(works)
+            session.commit()
+            print("✅ تم توليد بيانات الاختبار بنجاح!")
+            
+        session.close()
+    except Exception as e:
+        print(f"Seed Error: {e}")
+
 # --- الخدمات ---
 def auth_user(u, p):
     s = SessionLocal()
@@ -150,7 +234,7 @@ def get_analytics_data():
         return pd.DataFrame()
 
 # ==========================================
-# 4. التنسيق (CSS) - مطابق للصورة المرفقة
+# 4. التنسيق (CSS) - الاحترافي
 # ==========================================
 st.markdown("""
 <style>
@@ -163,54 +247,35 @@ st.markdown("""
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; }
     
-    /* تصميم البطاقات العلوية (KPI Cards) - مطابق للصورة */
+    /* بطاقات KPI */
     .kpi-container {
-        background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.04);
-        border: 1px solid #f1f5f9;
-        border-right: 4px solid #3b82f6; /* الخط الأزرق على اليمين */
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 10px;
-        transition: transform 0.2s;
+        background-color: white; padding: 20px; border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
+        border-right: 4px solid #3b82f6;
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 10px; transition: transform 0.2s;
     }
     .kpi-container:hover { transform: translateY(-3px); }
     .kpi-info { text-align: right; }
     .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
     .kpi-label { font-family: 'Tajawal'; font-size: 13px; color: #64748b; font-weight: 600; }
-    .kpi-icon { 
-        width: 45px; height: 45px; 
-        background-color: #eff6ff; 
-        border-radius: 10px; 
-        display: flex; align-items: center; justify-content: center; 
-        font-size: 22px; color: #3b82f6; 
-    }
+    .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
 
-    /* تصميم حاويات الرسوم البيانية */
-    .chart-container {
-        background-color: white;
-        padding: 20px;
-        border-radius: 15px;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        margin-bottom: 20px;
-    }
-    
-    /* أزرار */
+    /* الحاويات */
+    .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 5. التطبيق
+# 5. واجهة التطبيق
 # ==========================================
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
-# --- شاشة الدخول ---
+# تشغيل التهيئة (مرة واحدة عند التحميل)
+init_db_with_seed()
+
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
@@ -240,7 +305,6 @@ if not st.session_state['logged_in']:
                     st.rerun()
                 else: st.toast("بيانات خاطئة", icon="❌")
 
-# --- النظام الداخلي ---
 else:
     user = st.session_state['user']
     
@@ -275,21 +339,12 @@ else:
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # ============================================
-    #  🌟 لوحة القيادة (مطابقة للصورة المرفقة)
-    # ============================================
+    # --- لوحة القيادة ---
     if selection == "لوحة القيادة":
-        st.markdown("""
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-            <h2 style="font-family:'Cairo'; color:#1e3a8a; margin:0;">📊 لوحة القيادة العامة</h2>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # 1. جلب البيانات
+        st.markdown("## 📊 لوحة القيادة العامة")
         df = get_analytics_data()
         
         if not df.empty:
-            # الفلاتر (في Expander نظيف)
             with st.expander("🔍 تصفية البيانات العامة", expanded=True):
                 c1, c2, c3 = st.columns(3)
                 with c1: 
@@ -302,191 +357,95 @@ else:
                     types = sorted(df['activity_type'].unique().tolist())
                     sel_type = st.selectbox("نوع النشاط", ["الكل"] + types)
 
-            # تطبيق الفلترة
             filtered_df = df.copy()
             if sel_year != "الكل": filtered_df = filtered_df[filtered_df['year'] == sel_year]
             if sel_dept != "الكل": filtered_df = filtered_df[filtered_df['department'] == sel_dept]
             if sel_type != "الكل": filtered_df = filtered_df[filtered_df['activity_type'] == sel_type]
 
-            st.write("") # فاصل
-
-            # 2. البطاقات العلوية (KPIs) - تصميم مطابق للصورة
+            st.write("")
             k1, k2, k3, k4 = st.columns(4)
             
-            # حساب القيم
-            total_works = len(filtered_df)
-            total_researchers = filtered_df['researcher'].nunique()
-            total_points = filtered_df['points'].sum()
-            active_year = filtered_df['year'].mode()[0] if not filtered_df.empty else datetime.now().year
+            with k4: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{len(filtered_df)}</div><div class="kpi-label">إجمالي النتاج</div></div><div class="kpi-icon">📚</div></div>', unsafe_allow_html=True)
+            with k3: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{filtered_df["researcher"].nunique()}</div><div class="kpi-label">الباحثون</div></div><div class="kpi-icon">👥</div></div>', unsafe_allow_html=True)
+            with k2: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{filtered_df["points"].sum()}</div><div class="kpi-label">النقاط</div></div><div class="kpi-icon">⭐</div></div>', unsafe_allow_html=True)
+            with k1: 
+                yr = filtered_df['year'].mode()[0] if not filtered_df.empty else "-"
+                st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">الأكثر نشاطاً</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
 
-            with k4:
-                st.markdown(f"""
-                <div class="kpi-container">
-                    <div class="kpi-info">
-                        <div class="kpi-value">{total_works}</div>
-                        <div class="kpi-label">إجمالي النتاج العلمي</div>
-                    </div>
-                    <div class="kpi-icon">📚</div>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            with k3:
-                st.markdown(f"""
-                <div class="kpi-container">
-                    <div class="kpi-info">
-                        <div class="kpi-value">{total_researchers}</div>
-                        <div class="kpi-label">الباحثون النشطون</div>
-                    </div>
-                    <div class="kpi-icon">👥</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with k2:
-                st.markdown(f"""
-                <div class="kpi-container">
-                    <div class="kpi-info">
-                        <div class="kpi-value">{total_points}</div>
-                        <div class="kpi-label">مجموع نقاط التقييم</div>
-                    </div>
-                    <div class="kpi-icon">⭐</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            with k1:
-                st.markdown(f"""
-                <div class="kpi-container">
-                    <div class="kpi-info">
-                        <div class="kpi-value">{active_year}</div>
-                        <div class="kpi-label">السنة الأكثر نشاطاً</div>
-                    </div>
-                    <div class="kpi-icon">📅</div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            # 3. الرسوم البيانية (Charts) - مطابقة للصورة
-            chart_col1, chart_col2 = st.columns([1, 1])
-            
-            with chart_col2:
+            c_g1, c_g2 = st.columns([1, 1])
+            with c_g2:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 st.markdown("##### 📊 توزيع الأنشطة")
-                # رسم حلقي (Donut Chart)
-                fig_donut = px.pie(
-                    filtered_df, names='activity_type', 
-                    hole=0.5, 
-                    color_discrete_sequence=px.colors.sequential.Blues_r
-                )
-                fig_donut.update_layout(showlegend=True, margin=dict(t=0, b=0, l=0, r=0), height=300)
-                st.plotly_chart(fig_donut, use_container_width=True)
+                fig_d = px.pie(filtered_df, names='activity_type', hole=0.5, color_discrete_sequence=px.colors.sequential.Blues_r)
+                fig_d.update_layout(margin=dict(t=0, b=0, l=0, r=0), height=300)
+                st.plotly_chart(fig_d, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
-
-            with chart_col1:
+            with c_g1:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 st.markdown("##### 📈 التطور السنوي")
-                # رسم عمودي (Bar Chart)
                 if not filtered_df.empty:
-                    yearly_data = filtered_df.groupby('year').size().reset_index(name='count')
-                    fig_bar = px.bar(
-                        yearly_data, x='year', y='count', 
-                        text_auto=True,
-                        color_discrete_sequence=['#2563eb']
-                    )
-                    fig_bar.update_layout(
-                        xaxis_title="", yaxis_title="", 
-                        margin=dict(t=10, b=10, l=10, r=10), 
-                        height=300,
-                        plot_bgcolor='white'
-                    )
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    y_df = filtered_df.groupby('year').size().reset_index(name='count')
+                    fig_b = px.bar(y_df, x='year', y='count', text_auto=True, color_discrete_sequence=['#2563eb'])
+                    fig_b.update_layout(margin=dict(t=10, b=10, l=10, r=10), height=300, plot_bgcolor='white')
+                    st.plotly_chart(fig_b, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
+        else: st.warning("جاري تحميل البيانات...")
 
-        else:
-            st.warning("⚠️ لا توجد بيانات متاحة حالياً.")
-
-    # ============================================
-    #  صفحة تسجيل نتاج جديد (الديناميكية)
-    # ============================================
+    # --- تسجيل نتاج ---
     elif selection == "تسجيل نتاج جديد":
         st.title("📝 تسجيل نتاج علمي جديد")
         
         st.markdown("### 1️⃣ نوع النشاط البحثي")
-        w_type = st.selectbox(
-            "اختر نوع النشاط لتخصيص الحقول:", 
-            ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"]
-        )
+        w_type = st.selectbox("اختر نوع النشاط:", ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"])
         st.markdown("---")
         
-        if 'form_id' not in st.session_state: st.session_state['form_id'] = 0
+        if 'form_id' not in st.session_state: st.session_state['form_id'] = int(time.time())
         
-        with st.form(key=f"work_form_{st.session_state['form_id']}"):
-            col_main1, col_main2 = st.columns([3, 1])
-            with col_main1: w_title = st.text_input("العنوان الكامل للعمل *")
-            with col_main2: w_date = st.date_input("تاريخ النشر *")
-            w_lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"])
-
+        with st.form(key=f"w_form_{st.session_state['form_id']}"):
+            col1, col2 = st.columns([3, 1])
+            with col1: title = st.text_input("العنوان الكامل *", key=f"t_{w_type}")
+            with col2: d_date = st.date_input("التاريخ *", key=f"d_{w_type}")
+            lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
+            
             st.markdown(f"**تفاصيل: {w_type}**")
-            details_data = {"language": w_lang}
-            w_class, w_points = "غير مصنف", 10
+            details = {"lang": lang}
+            pts = 10
+            cls = "غير مصنف"
 
             if w_type == "مقال في مجلة علمية":
                 c1, c2 = st.columns(2)
                 with c1:
-                    journal = st.text_input("اسم المجلة")
-                    issn = st.text_input("ISSN")
-                    url_link = st.text_input("رابط المقال")
+                    j = st.text_input("المجلة", key=f"j_{w_type}")
+                    issn = st.text_input("ISSN", key=f"i_{w_type}")
                 with c2:
-                    w_class = st.selectbox("تصنيف المجلة", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4", "غير مصنف"])
-                    indexing = st.multiselect("الفهرسة", ["ASJP", "Scopus", "Web of Science"])
-                    vol_issue = st.text_input("المجلد/العدد")
-                details_data.update({"journal": journal, "issn": issn, "indexing": indexing, "volume_issue": vol_issue, "url": url_link})
-                if w_class in ["A", "Q1"]: w_points = 100
-                elif w_class in ["B", "Q2"]: w_points = 75
-                elif w_class == "C": w_points = 50
-                else: w_points = 25
+                    cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"], key=f"c_{w_type}")
+                details.update({"journal": j, "issn": issn})
+                if cls in ["A", "Q1"]: pts = 100
+                elif cls in ["B", "Q2"]: pts = 75
+                else: pts = 50
 
             elif w_type == "مداخلة في مؤتمر":
-                c1, c2 = st.columns(2)
-                with c1:
-                    conf_name = st.text_input("اسم الملتقى")
-                    organizer = st.text_input("الجهة المنظمة")
-                with c2:
-                    scope = st.selectbox("النطاق", ["وطني", "دولي"])
-                    location = st.text_input("المكان")
-                details_data.update({"conference": conf_name, "organizer": organizer, "scope": scope, "location": location})
-                w_class = scope
-                w_points = 50 if scope == "دولي" else 25
-
-            elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
-                c1, c2 = st.columns(2)
-                with c1:
-                    publisher = st.text_input("دار النشر")
-                    isbn = st.text_input("ISBN")
-                with c2:
-                    pages = st.text_input("عدد الصفحات")
-                details_data.update({"publisher": publisher, "isbn": isbn, "pages": pages})
-                w_points = 80 if w_type == "تأليف كتاب" else 40
+                conf = st.text_input("اسم الملتقى", key=f"conf_{w_type}")
+                scope = st.selectbox("النطاق", ["وطني", "دولي"], key=f"sc_{w_type}")
+                details.update({"conf": conf, "scope": scope})
+                pts = 50 if scope == "دولي" else 25
 
             st.markdown("---")
-            if st.form_submit_button("💾 حفظ البيانات"):
-                if w_title:
-                    json_details = json.dumps(details_data, ensure_ascii=False)
-                    with st.spinner("جاري الحفظ..."):
-                        if add_work_service(user['id'], w_title, json_details, w_type, w_class, w_date, w_points):
-                            st.toast("✅ تم الحفظ!", icon="🎉")
-                            time.sleep(1); st.session_state['form_id'] += 1; st.rerun()
-                        else: st.toast("خطأ", icon="🚨")
-                else: st.toast("أدخل العنوان", icon="⚠️")
+            if st.form_submit_button("💾 حفظ"):
+                if title:
+                    if add_work_service(user['id'], title, json.dumps(details), w_type, cls, d_date, pts):
+                        st.toast("تم الحفظ!", icon="✅")
+                        time.sleep(1); st.session_state['form_id'] = int(time.time()); st.rerun()
+                    else: st.error("خطأ")
+                else: st.warning("العنوان مطلوب")
 
-    # ============================================
-    #  باقي الصفحات
-    # ============================================
+    # --- الصفحات الأخرى ---
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
         try:
-            query = f"SELECT * FROM works WHERE user_id = {user['id']} ORDER BY publication_date DESC"
-            my_df = pd.read_sql(query, engine)
-            if not my_df.empty: st.dataframe(my_df[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
-            else: st.info("لا توجد أعمال.")
-        except: pass
+            q = f"SELECT * FROM works WHERE user_id = {user['id']} ORDER BY publication_date DESC"
+            st.dataframe(pd.read_sql(q, engine)[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
+        except: st.info("لا توجد أعمال.")
 
     elif selection == "الملف الشخصي":
         st.title("👤 الملف الشخصي")
