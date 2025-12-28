@@ -5,7 +5,6 @@ from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedl
 import bcrypt
 from datetime import date
 import plotly.express as px
-import plotly.graph_objects as go
 import time
 import json 
 import urllib.parse
@@ -130,11 +129,11 @@ def get_img_as_base64(file_path):
         return base64.b64encode(data).decode()
     except: return None
 
-# 🆕 دالة جلب البيانات الشاملة للوحة القيادة
+# 🆕 دالة جلب البيانات المحسنة (تعالج القيم الفارغة)
 def get_analytics_data():
     query = """
     SELECT 
-        w.id, w.title, w.activity_type, w.publication_date, w.year, w.points,
+        w.id, w.title, w.activity_type, w.publication_date, w.year, w.points, w.classification,
         u.full_name as researcher, 
         t.name as team, 
         d.name_ar as department
@@ -145,6 +144,10 @@ def get_analytics_data():
     """
     try:
         df = pd.read_sql(query, engine)
+        # ✅ معالجة القيم الفارغة لمنع انهيار الرسوم البيانية
+        df['department'] = df['department'].fillna('غير محدد')
+        df['team'] = df['team'].fillna('غير محدد')
+        df['activity_type'] = df['activity_type'].fillna('غير محدد')
         return df
     except Exception as e:
         return pd.DataFrame()
@@ -169,10 +172,11 @@ st.markdown("""
         border-right: 5px solid #2563eb;
         box-shadow: 0 4px 10px rgba(0,0,0,0.05);
         transition: transform 0.3s;
+        text-align: center;
     }
     .kpi-card:hover { transform: translateY(-5px); }
     .kpi-val { font-size: 32px; font-weight: 800; color: #1e3a8a; font-family: 'Cairo'; }
-    .kpi-lbl { font-size: 14px; color: #64748b; font-weight: bold; }
+    .kpi-lbl { font-size: 14px; color: #64748b; font-weight: bold; margin-top: 5px; }
     
     /* الفلاتر */
     .stExpander { border: 1px solid #e2e8f0; border-radius: 10px; background: white; }
@@ -277,7 +281,7 @@ else:
             st.rerun()
 
     # ============================================
-    #  🌟 لوحة القيادة الاحترافية (NEW)
+    #  🌟 لوحة القيادة الاحترافية (المصححة)
     # ============================================
     if selection == "لوحة القيادة":
         st.title("📊 لوحة القيادة والتحليل البياني")
@@ -286,26 +290,27 @@ else:
         df = get_analytics_data()
         
         if not df.empty:
-            # 2. الفلاتر (Filters)
+            # 2. الفلاتر (Filters) الذكية
             with st.expander("🔍 تصفية البيانات المتقدمة (Filters)", expanded=True):
                 col_f1, col_f2, col_f3, col_f4 = st.columns(4)
                 
                 with col_f1:
+                    # تصفية السنوات
                     years = sorted(df['year'].unique().tolist(), reverse=True)
-                    sel_year = st.multiselect("السنة", years, default=years[:1]) # افتراضياً نختار أحدث سنة
+                    sel_year = st.multiselect("السنة", years, default=[]) # افتراضياً الكل
                 
                 with col_f2:
-                    # تعبئة الأقسام تلقائياً
-                    depts = sorted(df['department'].dropna().unique().tolist())
+                    # تصفية الأقسام
+                    depts = sorted(df['department'].unique().tolist())
                     sel_dept = st.multiselect("القسم", depts)
                 
                 with col_f3:
-                    # تصفية الفرق بناءً على القسم المختار
+                    # تصفية الفرق (تعتمد على القسم المختار)
                     if sel_dept:
-                        teams = sorted(df[df['department'].isin(sel_dept)]['team'].dropna().unique().tolist())
+                        available_teams = sorted(df[df['department'].isin(sel_dept)]['team'].unique().tolist())
                     else:
-                        teams = sorted(df['team'].dropna().unique().tolist())
-                    sel_team = st.multiselect("الفرقة", teams)
+                        available_teams = sorted(df['team'].unique().tolist())
+                    sel_team = st.multiselect("الفرقة", available_teams)
                 
                 with col_f4:
                     types = sorted(df['activity_type'].unique().tolist())
@@ -322,10 +327,15 @@ else:
 
             # 3. عرض المؤشرات (KPIs)
             kp1, kp2, kp3, kp4 = st.columns(4)
-            kp1.markdown(f'<div class="kpi-card"><div class="kpi-val">{len(filtered_df)}</div><div class="kpi-lbl">إجمالي الأعمال</div></div>', unsafe_allow_html=True)
-            kp2.markdown(f'<div class="kpi-card"><div class="kpi-val">{filtered_df["researcher"].nunique()}</div><div class="kpi-lbl">الباحثون النشطون</div></div>', unsafe_allow_html=True)
-            kp3.markdown(f'<div class="kpi-card"><div class="kpi-val">{filtered_df["points"].sum()}</div><div class="kpi-lbl">مجموع النقاط</div></div>', unsafe_allow_html=True)
-            kp4.markdown(f'<div class="kpi-card"><div class="kpi-val">{len(sel_team) if sel_team else filtered_df["team"].nunique()}</div><div class="kpi-lbl">الفرق المشاركة</div></div>', unsafe_allow_html=True)
+            with kp1:
+                st.markdown(f'<div class="kpi-card"><div class="kpi-val">{len(filtered_df)}</div><div class="kpi-lbl">إجمالي الأعمال</div></div>', unsafe_allow_html=True)
+            with kp2:
+                st.markdown(f'<div class="kpi-card"><div class="kpi-val">{filtered_df["researcher"].nunique()}</div><div class="kpi-lbl">الباحثون النشطون</div></div>', unsafe_allow_html=True)
+            with kp3:
+                st.markdown(f'<div class="kpi-card"><div class="kpi-val">{filtered_df["points"].sum()}</div><div class="kpi-lbl">مجموع النقاط</div></div>', unsafe_allow_html=True)
+            with kp4:
+                top_dept = filtered_df['department'].mode()[0] if not filtered_df.empty else "-"
+                st.markdown(f'<div class="kpi-card"><div class="kpi-val" style="font-size:20px">{top_dept}</div><div class="kpi-lbl">القسم الأنشط</div></div>', unsafe_allow_html=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
 
@@ -334,48 +344,51 @@ else:
             
             with chart_c1:
                 st.subheader("🌐 التوزيع الهرمي للأعمال (Sunburst)")
-                # رسم بياني شمسي يوضح (القسم -> الفرقة -> نوع النشاط)
+                #  - رسم بياني حلقي يظهر القسم ثم الفرقة ثم النشاط
                 if not filtered_df.empty:
-                    fig_sun = px.sunburst(
-                        filtered_df, 
-                        path=['department', 'team', 'activity_type'], 
-                        values='points',
-                        color='points',
-                        color_continuous_scale='Blues'
-                    )
-                    fig_sun.update_layout(height=400, margin=dict(t=0, l=0, r=0, b=0))
-                    st.plotly_chart(fig_sun, use_container_width=True)
+                    try:
+                        fig_sun = px.sunburst(
+                            filtered_df, 
+                            path=['department', 'team', 'activity_type'], 
+                            values='points',
+                            color='department', # تلوين حسب القسم
+                            color_discrete_sequence=px.colors.qualitative.Prism
+                        )
+                        fig_sun.update_layout(margin=dict(t=0, l=0, r=0, b=0), height=400)
+                        st.plotly_chart(fig_sun, use_container_width=True)
+                    except Exception as e:
+                        st.warning("بيانات غير كافية للرسم الهرمي")
             
             with chart_c2:
                 st.subheader("📈 التطور الزمني للأنشطة")
-                # رسم بياني شريطي مكدس
-                timeline_df = filtered_df.groupby(['year', 'activity_type']).size().reset_index(name='count')
-                fig_bar = px.bar(
-                    timeline_df, x='year', y='count', color='activity_type',
-                    text_auto=True,
-                    color_discrete_sequence=px.colors.qualitative.Pastel
-                )
-                fig_bar.update_layout(xaxis_title="السنة", yaxis_title="عدد الأعمال")
-                st.plotly_chart(fig_bar, use_container_width=True)
+                #                 if not filtered_df.empty:
+                    timeline_df = filtered_df.groupby(['year', 'activity_type']).size().reset_index(name='count')
+                    fig_bar = px.bar(
+                        timeline_df, x='year', y='count', color='activity_type',
+                        text_auto=True, barmode='group',
+                        color_discrete_sequence=px.colors.qualitative.Pastel
+                    )
+                    fig_bar.update_layout(xaxis_title="السنة", yaxis_title="العدد", height=400)
+                    st.plotly_chart(fig_bar, use_container_width=True)
 
-            # 5. جدول ترتيب الباحثين (Leaderboard)
-            st.subheader("🏆 أكثر الباحثين تميزاً (حسب النقاط)")
+            # 5. جدول ترتيب الباحثين
+            st.subheader("🏆 لوحة الشرف (Top Researchers)")
             if not filtered_df.empty:
                 top_researchers = filtered_df.groupby('researcher')['points'].sum().reset_index().sort_values(by='points', ascending=False).head(10)
                 fig_h_bar = px.bar(
                     top_researchers, y='researcher', x='points', 
                     orientation='h', text_auto=True,
-                    color='points', color_continuous_scale='Teal'
+                    color='points', color_continuous_scale='Blues'
                 )
                 fig_h_bar.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="النقاط", yaxis_title="الباحث")
                 st.plotly_chart(fig_h_bar, use_container_width=True)
 
             # 6. عرض البيانات الخام
-            with st.expander("📋 عرض جدول البيانات الخام"):
-                st.dataframe(filtered_df[['publication_date', 'activity_type', 'title', 'researcher', 'team', 'points']], use_container_width=True)
+            with st.expander("📋 عرض جدول البيانات التفصيلي"):
+                st.dataframe(filtered_df[['publication_date', 'classification', 'activity_type', 'title', 'researcher', 'team', 'points']], use_container_width=True)
 
         else:
-            st.warning("⚠️ لا توجد بيانات مسجلة في قاعدة البيانات حتى الآن. الرجاء إضافة نتاج علمي أولاً.")
+            st.warning("⚠️ لا توجد بيانات مسجلة في قاعدة البيانات حتى الآن. يرجى من الباحثين إضافة نتاج علمي أولاً.")
 
     # ============================================
     #  صفحة تسجيل نتاج جديد (النسخة الديناميكية)
