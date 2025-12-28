@@ -1,13 +1,12 @@
 import streamlit as st
 import pandas as pd
-from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text, inspect
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
 from datetime import date
 import plotly.express as px
 import time
 import json 
-import urllib.parse
 import base64
 import os
 import random
@@ -31,7 +30,8 @@ if "db" not in st.secrets:
 def get_db_engine():
     try:
         db_config = st.secrets["db"]
-        encoded_password = urllib.parse.quote_plus(db_config["password"])
+        # إصلاح ترميز كلمة المرور
+        encoded_password = db_config["password"].replace("@", "%40") 
         DATABASE_URL = f"postgresql://{db_config['user']}:{encoded_password}@{db_config['host']}:{db_config['port']}/{db_config['name']}?sslmode=require"
         return create_engine(DATABASE_URL, pool_pre_ping=True)
     except: return None
@@ -42,13 +42,13 @@ if not engine: st.stop()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- النماذج (Tables) - محدثة للصلاحيات الهرمية ---
+# --- النماذج (Tables) ---
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True)
     name_ar = Column(String)
     teams = relationship("Team", back_populates="department")
-    users = relationship("User", back_populates="department") # للعلاقة مع رئيس القسم
+    users = relationship("User", back_populates="department")
 
 class Team(Base):
     __tablename__ = "teams"
@@ -66,15 +66,10 @@ class User(Base):
     password_hash = Column(String)
     role = Column(String) # admin, dept_head, leader, researcher
     member_type = Column(String)
-    
-    # ربط المستخدم بفرقة (للباحث ورئيس الفرقة)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     team = relationship("Team", back_populates="members")
-    
-    # ربط المستخدم بقسم (لرئيس القسم)
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
     department = relationship("Department", back_populates="users")
-    
     works = relationship("Work", back_populates="researcher")
 
 class Work(Base):
@@ -91,122 +86,51 @@ class Work(Base):
     researcher = relationship("User", back_populates="works")
 
 # ==========================================
-# 🚀 3. دالة التهيئة الذكية (إعادة بناء)
+# 🚀 3. التهيئة التلقائية (Auto-Fix)
 # ==========================================
-def init_db_structured():
+def auto_init_system():
+    """تقوم بإنشاء الجداول والحسابات الأساسية إذا لم تكن موجودة"""
     try:
-        # ملاحظة: في البيئة الحقيقية لا نستخدم drop_all إلا عند التأسيس
-        # هنا نستخدمها لضمان تطبيق التغييرات الهيكلية الجديدة
-        Base.metadata.drop_all(bind=engine) 
-        Base.metadata.create_all(bind=engine)
-        
+        inspector = inspect(engine)
+        # إذا لم يكن جدول المستخدمين موجوداً، نعيد بناء كل شيء
+        if not inspector.has_table("users"):
+            Base.metadata.create_all(bind=engine)
+            
         session = SessionLocal()
-        
-        # 1. إنشاء الأقسام
-        dept_names = ["الدراسات السوسيولوجية", "علم النفس", "علوم التربية", "الأرطوفونيا", "الفلسفة", "التاريخ"]
-        depts_objs = []
-        for name in dept_names:
-            d = Department(name_ar=name)
-            session.add(d)
-            depts_objs.append(d)
-        session.commit()
-        
-        # 2. إنشاء الفرق (2 لكل قسم)
-        teams_objs = []
-        for dept in depts_objs:
-            t1 = Team(name=f"فرقة {dept.name_ar} (أ)", department_id=dept.id)
-            t2 = Team(name=f"فرقة {dept.name_ar} (ب)", department_id=dept.id)
-            session.add_all([t1, t2])
-            teams_objs.extend([t1, t2])
-        session.commit()
+        # التحقق من وجود المدير
+        admin = session.query(User).filter_by(username="admin").first()
+        if not admin:
+            # 1. إنشاء الأقسام
+            depts_data = ["الدراسات السوسيولوجية", "علم النفس", "علوم التربية", "الأرطوفونيا", "الفلسفة", "التاريخ"]
+            depts = []
+            for name in depts_data:
+                if not session.query(Department).filter_by(name_ar=name).first():
+                    d = Department(name_ar=name)
+                    session.add(d)
+                    depts.append(d)
+            session.commit() # لحفظ الأقسام والحصول على IDs
 
-        # 3. إنشاء الحسابات القيادية (كلمة السر الموحدة: 12345)
-        pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
-        
-        # أ. مدير المخبر (Admin)
-        admin = User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin")
-        session.add(admin)
+            # 2. إنشاء فرق افتراضية
+            all_depts = session.query(Department).all()
+            for d in all_depts:
+                t_name = f"فرقة بحث {d.name_ar}"
+                if not session.query(Team).filter_by(name=t_name).first():
+                    session.add(Team(name=t_name, department_id=d.id))
+            session.commit()
 
-        # ب. رؤساء الأقسام (Dept Heads)
-        for dept in depts_objs:
-            head = User(
-                username=f"head_{dept.id}", 
-                full_name=f"رئيس قسم {dept.name_ar}", 
-                password_hash=pw, 
-                role="dept_head", 
-                department_id=dept.id, # ربط بالقسم مباشرة
-                member_type="permanent"
-            )
-            session.add(head)
-
-        # ج. رؤساء الفرق (Team Leaders)
-        for team in teams_objs:
-            leader = User(
-                username=f"leader_{team.id}",
-                full_name=f"رئيس {team.name}",
-                password_hash=pw,
-                role="leader",
-                team_id=team.id,
-                department_id=team.department_id, # يرث القسم
-                member_type="permanent"
-            )
-            session.add(leader)
+            # 3. إنشاء المدير
+            pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
+            admin = User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin")
+            session.add(admin)
+            session.commit()
+            print("✅ تم تهيئة النظام وإنشاء المدير.")
             
-            # د. باحثين عاديين (Researchers)
-            res = User(
-                username=f"res_{team.id}",
-                full_name=f"باحث في {team.name}",
-                password_hash=pw,
-                role="researcher",
-                team_id=team.id,
-                department_id=team.department_id,
-                member_type="phd_student"
-            )
-            session.add(res)
-            
-            # إضافة نتاج علمي للباحث ولرئيس الفرقة
-            for u in [leader, res]:
-                for _ in range(3):
-                    w = Work(
-                        title=f"بحث تجريبي {random.randint(100,999)}",
-                        details='{"lang":"العربية"}',
-                        activity_type=random.choice(["مقال في مجلة علمية", "مداخلة في مؤتمر"]),
-                        classification="A",
-                        publication_date=date(2024, random.randint(1,12), 1),
-                        year=2024,
-                        points=100,
-                        user_id=u.id # سيتم تحديثه بعد الـ commit، لكن هنا نستخدم session.flush لو أردنا
-                    )
-                    # ملاحظة: في SQLAlchemy يجب إضافة المستخدم أولاً للحصول على ID
-                    # لذا سنقوم بالحفظ الجزئي
-        
-        session.commit()
-        
-        # إضافة الأعمال الآن بعد أن حصل المستخدمون على IDs
-        users = session.query(User).filter(User.role.in_(['leader', 'researcher'])).all()
-        works = []
-        for u in users:
-            for _ in range(random.randint(2, 5)):
-                w_type = random.choice(["مقال في مجلة علمية", "مداخلة في مؤتمر"])
-                pts = 100 if w_type == "مقال في مجلة علمية" else 50
-                works.append(Work(
-                    title=f"نشاط علمي حول الموضوع {random.randint(1,50)}",
-                    details='{"journal":"مجلة الباحث"}',
-                    activity_type=w_type,
-                    classification="A",
-                    publication_date=date(2025, random.randint(1,5), random.randint(1,28)),
-                    year=2025,
-                    points=pts,
-                    user_id=u.id
-                ))
-        session.add_all(works)
-        session.commit()
-        
         session.close()
-        return True
     except Exception as e:
-        print(e)
-        return False
+        print(f"Init Error: {e}")
+
+# استدعاء التهيئة فوراً عند التشغيل
+auto_init_system()
 
 # --- الخدمات ---
 def auth_user(u, p):
@@ -218,6 +142,16 @@ def auth_user(u, p):
     finally: s.close()
     return None
 
+def add_user_service(u, f, p, r, t_id, d_id):
+    s = SessionLocal()
+    try:
+        h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+        s.add(User(username=u, full_name=f, password_hash=h, role=r, team_id=t_id, department_id=d_id, member_type="permanent"))
+        s.commit()
+        return True
+    except: s.rollback(); return False
+    finally: s.close()
+
 def add_work_service(uid, title, details_json, atype, cls, date_obj, pts):
     s = SessionLocal()
     try:
@@ -227,22 +161,21 @@ def add_work_service(uid, title, details_json, atype, cls, date_obj, pts):
     except: s.rollback(); return False
     finally: s.close()
 
-def delete_work_service(work_id):
+def update_work_service(wid, title, date_obj):
     s = SessionLocal()
     try:
-        s.query(Work).filter(Work.id == work_id).delete()
-        s.commit()
-        return True
+        w = s.query(Work).filter(Work.id == wid).first()
+        if w:
+            w.title = title; w.publication_date = date_obj; w.year = date_obj.year
+            s.commit()
+            return True
     except: s.rollback(); return False
     finally: s.close()
 
-def update_work_service(work_id, title, date_obj):
+def delete_work_service(wid):
     s = SessionLocal()
     try:
-        w = s.query(Work).filter(Work.id == work_id).first()
-        w.title = title
-        w.publication_date = date_obj
-        w.year = date_obj.year
+        s.query(Work).filter(Work.id == wid).delete()
         s.commit()
         return True
     except: s.rollback(); return False
@@ -264,34 +197,21 @@ def get_img_as_base64(file_path):
         return base64.b64encode(data).decode()
     except: return None
 
-# 🆕 دالة جلب البيانات المفلترة حسب الصلاحية (The Core Logic)
-def get_filtered_data(user_role, user_id, user_dept_id, user_team_id):
-    base_query = """
-    SELECT 
-        w.id, w.title, w.activity_type, w.publication_date, w.year, w.points,
-        u.full_name as researcher, 
-        t.name as team, 
-        d.name_ar as department,
-        d.id as dept_id,
-        t.id as team_id,
-        u.id as user_id_val
+# دالة جلب البيانات الذكية (حسب الصلاحية)
+def get_smart_data(user):
+    base_q = """
+    SELECT w.*, u.full_name, t.name as team_name, d.name_ar as dept_name
     FROM works w
     JOIN users u ON w.user_id = u.id
     LEFT JOIN teams t ON u.team_id = t.id
     LEFT JOIN departments d ON t.department_id = d.id
     """
+    df = pd.read_sql(base_q, engine)
     
-    df = pd.read_sql(base_query, engine)
-    
-    # 🛡️ تطبيق الصلاحيات
-    if user_role == 'admin':
-        return df # يرى كل شيء
-    elif user_role == 'dept_head':
-        return df[df['dept_id'] == user_dept_id] # يرى قسمه فقط
-    elif user_role == 'leader':
-        return df[df['team_id'] == user_team_id] # يرى فرقته فقط
-    else:
-        return df[df['user_id_val'] == user_id] # يرى نفسه فقط
+    if user.role == 'admin': return df
+    elif user.role == 'dept_head': return df[df['dept_name'] == user.department.name_ar]
+    elif user.role == 'leader': return df[df['team_name'] == user.team.name]
+    else: return df[df['user_id'] == user.id]
 
 # ==========================================
 # 4. التنسيق (CSS)
@@ -309,7 +229,6 @@ st.markdown("""
     .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
     .kpi-label { font-family: 'Tajawal'; font-size: 13px; color: #64748b; font-weight: 600; }
     .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
-    .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
@@ -320,11 +239,12 @@ st.markdown("""
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
-# --- شاشة الدخول ---
+# --- تسجيل الدخول ---
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
         st.markdown("<br>", unsafe_allow_html=True)
+        # الشعار
         logo_path = "logo.png"
         logo_html = '<div style="font-size: 60px; margin-bottom: 10px;">🏛️</div>'
         if os.path.exists(logo_path):
@@ -346,24 +266,16 @@ if not st.session_state['logged_in']:
                 user = auth_user(u, p)
                 if user:
                     st.session_state['logged_in'] = True
-                    st.session_state['user'] = {
-                        'id': user.id, 'name': user.full_name, 'role': user.role, 
-                        'team_id': user.team_id, 'dept_id': user.department_id,
-                        'team_name': user.team.name if user.team else (user.department.name_ar if user.department else "الإدارة")
-                    }
+                    st.session_state['user'] = user # تخزين الكائن كاملاً (مؤقتاً للوصول للسمات)
                     st.rerun()
-                else: st.toast("بيانات خاطئة", icon="❌")
-        
-        with st.expander("🛠️ إعداد النظام (لأول مرة)"):
-            if st.button("إعادة تهيئة قاعدة البيانات وإنشاء الحسابات"):
-                with st.spinner("جاري بناء النظام..."):
-                    if init_db_structured():
-                        st.success("تم بنجاح! جرب الدخول بـ: admin / 12345")
-                    else: st.error("فشل")
+                else: st.toast("خطأ في البيانات", icon="❌")
 
 # --- النظام الداخلي ---
 else:
-    user = st.session_state['user']
+    # إعادة تحميل المستخدم من الجلسة لضمان استمرار الاتصال
+    user_id = st.session_state['user'].id
+    session = SessionLocal()
+    user = session.query(User).options(joinedload(User.team), joinedload(User.department)).filter(User.id == user_id).first()
     
     with st.sidebar:
         logo_path = "logo.png"
@@ -372,151 +284,161 @@ else:
             img = get_img_as_base64(logo_path)
             if img: sb_logo = f'<img src="data:image/png;base64,{img}" style="width: 140px; margin-bottom: 15px;">'
         
-        st.markdown(f"""
-        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center !important; padding-bottom: 20px; border-bottom: 1px solid #e5e7eb; margin-bottom: 20px;">
-            {sb_logo}
-            <h3 style="margin: 0; color: #1e3a8a; font-family:'Cairo'; text-align: center !important;">المركز البحثي أدرار</h3>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div style="text-align: center;">{sb_logo}<h3 style="color:#1e3a8a; font-family:'Cairo';">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
         
-        # عرض معلومات المستخدم وصلاحيته
-        role_labels = {"admin": "المدير العام", "dept_head": "رئيس قسم", "leader": "رئيس فرقة", "researcher": "باحث"}
-        st.info(f"مرحباً: {user['name']}\n\nالصلاحية: {role_labels.get(user['role'], user['role'])}")
+        role_map = {"admin": "المدير العام", "dept_head": "رئيس قسم", "leader": "رئيس فرقة", "researcher": "باحث"}
+        st.info(f"👤 {user.full_name}\n\n🏷️ {role_map.get(user.role, user.role)}")
         
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "إدارة الأنشطة": "🗂️ إدارة الأنشطة (تعديل/حذف)",
-            "تسجيل نتاج جديد": "📝 تسجيل نتاج جديد",
+            "تسجيل نتاج": "📝 تسجيل نتاج جديد",
             "أعمالي": "📂 سجل أعمالي",
             "الإعدادات": "⚙️ الإعدادات"
         }
-        
+        # إضافة خيار "إدارة المستخدمين" للمدير فقط
+        if user.role == 'admin':
+            menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (إضافة حسابات)"
+            
         sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
         selection = [k for k, v in menu.items() if v == sel][0]
         
-        if st.button("تسجيل الخروج"):
+        if st.button("خروج"):
             st.session_state['logged_in'] = False
             st.rerun()
 
     # ============================================
-    #  🌟 1. لوحة القيادة (ذكية حسب الصلاحية)
+    #  1. لوحة القيادة الذكية (حسب الصلاحية)
     # ============================================
     if selection == "لوحة القيادة":
-        st.markdown(f"## 📊 لوحة القيادة: {role_labels.get(user['role'], '')}")
+        role_title = role_map.get(user.role, "")
+        target_name = ""
+        if user.role == "dept_head" and user.department: target_name = f": {user.department.name_ar}"
+        elif user.role == "leader" and user.team: target_name = f": {user.team.name}"
         
-        # جلب البيانات حسب الصلاحية
-        df = get_filtered_data(user['role'], user['id'], user['dept_id'], user['team_id'])
+        st.markdown(f"## 📊 لوحة القيادة {role_title}{target_name}")
+        
+        df = get_smart_data(user)
         
         if not df.empty:
-            # بطاقات الأداء
             k1, k2, k3, k4 = st.columns(4)
-            with k4: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{len(df)}</div><div class="kpi-label">إجمالي الأعمال</div></div><div class="kpi-icon">📚</div></div>', unsafe_allow_html=True)
-            with k3: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["researcher"].nunique()}</div><div class="kpi-label">الباحثون</div></div><div class="kpi-icon">👥</div></div>', unsafe_allow_html=True)
+            with k4: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{len(df)}</div><div class="kpi-label">الأعمال</div></div><div class="kpi-icon">📚</div></div>', unsafe_allow_html=True)
+            with k3: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["user_id"].nunique()}</div><div class="kpi-label">الباحثون</div></div><div class="kpi-icon">👥</div></div>', unsafe_allow_html=True)
             with k2: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["points"].sum()}</div><div class="kpi-label">النقاط</div></div><div class="kpi-icon">⭐</div></div>', unsafe_allow_html=True)
-            with k1: 
-                yr = df['year'].mode()[0] if not df.empty else "-"
-                st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">الأكثر نشاطاً</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
-
-            # الرسوم البيانية
-            c_g1, c_g2 = st.columns([1, 1])
-            with c_g2:
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.markdown("##### 📊 توزيع الأنشطة")
-                fig_d = px.pie(df, names='activity_type', hole=0.5, color_discrete_sequence=px.colors.sequential.Blues_r)
-                st.plotly_chart(fig_d, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-            with c_g1:
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.markdown("##### 📈 التطور السنوي")
-                y_df = df.groupby('year').size().reset_index(name='count')
-                fig_b = px.bar(y_df, x='year', y='count', text_auto=True, color_discrete_sequence=['#2563eb'])
-                st.plotly_chart(fig_b, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-        else: st.warning("لا توجد بيانات متاحة لعرضها ضمن صلاحياتك.")
+            with k1: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["year"].max()}</div><div class="kpi-label">آخر نشاط</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                fig = px.pie(df, names='activity_type', title="توزيع الأنشطة", hole=0.5)
+                st.plotly_chart(fig, use_container_width=True)
+            with c2:
+                daily = df.groupby('year').size().reset_index(name='count')
+                fig2 = px.bar(daily, x='year', y='count', title="التطور السنوي")
+                st.plotly_chart(fig2, use_container_width=True)
+        else:
+            st.info("لا توجد بيانات متاحة لعرضها.")
 
     # ============================================
-    #  🌟 2. إدارة الأنشطة (CRUD - تعديل وحذف)
+    #  2. إدارة المستخدمين (للمدير فقط) 🆕
+    # ============================================
+    elif selection == "إدارة المستخدمين":
+        st.title("👥 إدارة المستخدمين والهيكل التنظيمي")
+        
+        with st.form("add_user"):
+            st.subheader("إضافة حساب مسؤول جديد")
+            c1, c2 = st.columns(2)
+            new_name = c1.text_input("الاسم الكامل")
+            new_user = c2.text_input("اسم المستخدم (للدخول)")
+            new_pass = st.text_input("كلمة المرور", type="password")
+            
+            role_type = st.selectbox("الصفة الإدارية", ["رئيس قسم", "رئيس فرقة", "باحث"])
+            
+            # جلب القوائم
+            depts = session.query(Department).all()
+            dept_names = {d.name_ar: d.id for d in depts}
+            
+            selected_dept = st.selectbox("القسم التابع له", list(dept_names.keys()))
+            selected_dept_id = dept_names[selected_dept]
+            
+            selected_team_id = None
+            if role_type in ["رئيس فرقة", "باحث"]:
+                teams = session.query(Team).filter_by(department_id=selected_dept_id).all()
+                team_names = {t.name: t.id for t in teams}
+                if teams:
+                    t_name = st.selectbox("الفرقة", list(team_names.keys()))
+                    selected_team_id = team_names[t_name]
+                else:
+                    st.warning("لا توجد فرق في هذا القسم")
+            
+            if st.form_submit_button("إضافة المستخدم"):
+                r_code = "dept_head" if role_type == "رئيس قسم" else ("leader" if role_type == "رئيس فرقة" else "researcher")
+                if add_user_service(new_user, new_name, new_pass, r_code, selected_team_id, selected_dept_id):
+                    st.success(f"تم إضافة {new_name} بنجاح!")
+                else:
+                    st.error("خطأ: ربما اسم المستخدم مكرر")
+
+    # ============================================
+    #  3. إدارة الأنشطة (تعديل/حذف)
     # ============================================
     elif selection == "إدارة الأنشطة":
-        st.title("🗂️ إدارة الأنشطة البحثية")
-        st.markdown("يمكنك هنا استعراض، تعديل، أو حذف الأنشطة التي تقع ضمن صلاحياتك.")
-        
-        # جلب البيانات حسب الصلاحية
-        df = get_filtered_data(user['role'], user['id'], user['dept_id'], user['team_id'])
+        st.title("🗂️ إدارة الأنشطة (تعديل وحذف)")
+        df = get_smart_data(user)
         
         if not df.empty:
-            # عرض تفاعلي للبيانات
-            for index, row in df.iterrows():
-                with st.expander(f"{row['activity_type']}: {row['title']} | 👤 {row['researcher']}"):
-                    c1, c2, c3 = st.columns([2, 1, 1])
-                    with c1:
-                        new_title = st.text_input("العنوان", value=row['title'], key=f"t_{row['id']}")
-                    with c2:
-                        # تحويل التاريخ من نص إلى كائن date
-                        d_val = pd.to_datetime(row['publication_date']).date()
-                        new_date = st.date_input("التاريخ", value=d_val, key=f"d_{row['id']}")
+            for i, row in df.iterrows():
+                with st.expander(f"{row['title']} | {row['activity_type']}"):
+                    c1, c2 = st.columns([3, 1])
+                    new_t = c1.text_input("العنوان", row['title'], key=f"t_{row['id']}")
+                    new_d = c2.date_input("التاريخ", pd.to_datetime(row['publication_date']).date(), key=f"d_{row['id']}")
                     
-                    with c3:
-                        st.write("")
-                        st.write("")
-                        col_btn1, col_btn2 = st.columns(2)
-                        with col_btn1:
-                            if st.button("💾 تعديل", key=f"upd_{row['id']}", type="primary"):
-                                if update_work_service(row['id'], new_title, new_date):
-                                    st.toast("تم التعديل!", icon="✅")
-                                    time.sleep(1)
-                                    st.rerun()
-                        with col_btn2:
-                            if st.button("🗑️ حذف", key=f"del_{row['id']}"):
-                                if delete_work_service(row['id']):
-                                    st.toast("تم الحذف!", icon="🗑️")
-                                    time.sleep(1)
-                                    st.rerun()
-        else:
-            st.info("لا توجد أنشطة لإدارتها.")
+                    b1, b2 = st.columns(2)
+                    if b1.button("حفظ التعديل", key=f"sav_{row['id']}"):
+                        update_work_service(row['id'], new_t, new_d)
+                        st.toast("تم التعديل"); time.sleep(1); st.rerun()
+                    
+                    if b2.button("حذف نهائي", key=f"del_{row['id']}"):
+                        delete_work_service(row['id'])
+                        st.toast("تم الحذف"); time.sleep(1); st.rerun()
+        else: st.info("لا توجد بيانات.")
 
-    # --- تسجيل نتاج جديد ---
-    elif selection == "تسجيل نتاج جديد":
-        st.title("📝 تسجيل نتاج علمي جديد")
-        w_type = st.selectbox("اختر نوع النشاط:", ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "مشروع بحث"])
-        st.markdown("---")
+    # ============================================
+    #  4. تسجيل نتاج جديد (النموذج الكامل)
+    # ============================================
+    elif selection == "تسجيل نتاج":
+        st.title("📝 تسجيل نتاج علمي")
+        w_type = st.selectbox("نوع النشاط", ["مقال في مجلة علمية", "مداخلة في مؤتمر", "تأليف كتاب", "فصل في كتاب", "مشروع بحث"])
         
-        with st.form(key=f"add_form"):
-            title = st.text_input("العنوان الكامل *")
-            d_date = st.date_input("التاريخ *")
-            lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"])
+        if 'fid' not in st.session_state: st.session_state['fid'] = 0
+        with st.form(key=f"f_{st.session_state['fid']}"):
+            title = st.text_input("العنوان *")
+            date_pub = st.date_input("التاريخ *")
             
-            # تفاصيل مبسطة للمثال
-            details = {"lang": lang}
-            pts, cls = 10, "غير مصنف"
-            
+            # تفاصيل ديناميكية مختصرة للمثال
+            details = {}
             if w_type == "مقال في مجلة علمية":
-                j = st.text_input("المجلة")
+                details['journal'] = st.text_input("اسم المجلة")
                 cls = st.selectbox("التصنيف", ["A", "B", "C"])
-                if cls == "A": pts = 100
-                elif cls == "B": pts = 75
-                else: pts = 50
-                details['journal'] = j
+                pts = 100 if cls=="A" else 75
+            else:
+                pts = 50
+                cls = "غير مصنف"
             
-            if st.form_submit_button("💾 حفظ"):
+            if st.form_submit_button("حفظ"):
                 if title:
-                    if add_work_service(user['id'], title, json.dumps(details), w_type, cls, d_date, pts):
-                        st.toast("تم الحفظ!", icon="✅")
-                        st.rerun()
-                    else: st.error("خطأ")
-                else: st.warning("العنوان مطلوب")
+                    add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
+                    st.success("تم الحفظ"); st.session_state['fid'] += 1; st.rerun()
 
     # --- الصفحات الأخرى ---
     elif selection == "أعمالي":
-        st.title("📂 سجل أعمالي")
-        try:
-            q = f"SELECT * FROM works WHERE user_id = {user['id']} ORDER BY publication_date DESC"
-            st.dataframe(pd.read_sql(q, engine)[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
-        except: st.info("لا توجد أعمال.")
+        st.title("📂 أعمالي")
+        df = get_smart_data(user)
+        df_my = df[df['user_id'] == user.id]
+        if not df_my.empty: st.dataframe(df_my[['title', 'activity_type', 'points']])
+        else: st.info("فارغ")
 
     elif selection == "الإعدادات":
         st.title("⚙️ الإعدادات")
         with st.form("pwd"):
-            p1 = st.text_input("كلمة المرور الجديدة", type="password")
+            p = st.text_input("كلمة المرور الجديدة", type="password")
             if st.form_submit_button("تغيير"):
-                if change_password(user['id'], p1): st.success("تم!")
+                change_password(user.id, p); st.success("تم")
