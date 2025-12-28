@@ -9,7 +9,7 @@ import time
 import json 
 import base64
 import os
-import random
+import io
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -19,7 +19,7 @@ st.set_page_config(
     page_icon="🎓"
 )
 
-# --- قائمة أنواع الأنشطة (للتوحيد) ---
+# --- قائمة أنواع الأنشطة ---
 ACTIVITY_TYPES = [
     "مقال في مجلة علمية",
     "مداخلة في مؤتمر",
@@ -74,7 +74,7 @@ class User(Base):
     username = Column(String, unique=True)
     full_name = Column(String)
     password_hash = Column(String)
-    role = Column(String) # admin, dept_head, leader, researcher
+    role = Column(String) 
     member_type = Column(String)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     team = relationship("Team", back_populates="members")
@@ -96,48 +96,32 @@ class Work(Base):
     researcher = relationship("User", back_populates="works")
 
 # ==========================================
-# 🚀 3. التهيئة التلقائية (Auto-Fix)
+# 3. الخدمات والدوال المساعدة
 # ==========================================
 def auto_init_system():
     try:
         inspector = inspect(engine)
         if not inspector.has_table("users"):
             Base.metadata.create_all(bind=engine)
-            
         session = SessionLocal()
-        admin = session.query(User).filter_by(username="admin").first()
-        if not admin:
-            # 1. الأقسام
+        if not session.query(User).filter_by(username="admin").first():
+            # إنشاء الهيكل الأساسي
             depts_data = ["الدراسات السوسيولوجية", "علم النفس", "علوم التربية", "الأرطوفونيا", "الفلسفة", "التاريخ"]
-            depts_objs = []
             for name in depts_data:
-                d = session.query(Department).filter_by(name_ar=name).first()
-                if not d:
+                if not session.query(Department).filter_by(name_ar=name).first():
                     d = Department(name_ar=name)
                     session.add(d)
-                depts_objs.append(d)
-            session.commit()
-
-            # 2. الفرق (فرقة لكل قسم للتجربة)
-            for d in depts_objs:
-                t_name = f"فرقة بحث {d.name_ar}"
-                if not session.query(Team).filter_by(name=t_name).first():
-                    session.add(Team(name=t_name, department_id=d.id))
-            session.commit()
-
-            # 3. المدير
-            pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
-            admin = User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin")
-            session.add(admin)
-            session.commit()
+                    session.flush()
+                    session.add(Team(name=f"فرقة بحث {name}", department_id=d.id))
             
+            pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
+            session.add(User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin"))
+            session.commit()
         session.close()
-    except Exception as e:
-        print(f"Init Error: {e}")
+    except Exception: pass
 
 auto_init_system()
 
-# --- الخدمات ---
 def auth_user(u, p):
     s = SessionLocal()
     try:
@@ -216,12 +200,34 @@ def get_smart_data(user):
         if user.role == 'admin': return df
         elif user.role == 'dept_head': 
             if user.department: return df[df['dept_name'] == user.department.name_ar]
-            return df[df['dept_name'] == 'xxxx'] # Empty
+            return df[df['dept_name'] == 'xxxx']
         elif user.role == 'leader': 
             if user.team: return df[df['team_name'] == user.team.name]
             return df[df['team_name'] == 'xxxx']
         else: return df[df['user_id'] == user.id]
     except: return pd.DataFrame()
+
+# 🆕 دالة تحويل البيانات لملف Excel
+def to_excel(df):
+    output = io.BytesIO()
+    # تنظيف البيانات قبل التصدير (إزالة أعمدة غير هامة)
+    export_df = df.copy()
+    if 'details' in export_df.columns:
+        # محاولة استخراج معلومات مفيدة من JSON
+        export_df['تفاصيل_إضافية'] = export_df['details'].apply(lambda x: " | ".join([f"{k}:{v}" for k,v in json.loads(x).items()]) if x else "")
+    
+    cols_map = {
+        'title': 'العنوان', 'activity_type': 'النوع', 'publication_date': 'التاريخ', 
+        'points': 'النقاط', 'full_name': 'الباحث', 'team_name': 'الفرقة', 'dept_name': 'القسم'
+    }
+    export_df = export_df.rename(columns=cols_map)
+    # الاحتفاظ بالأعمدة العربية فقط
+    final_cols = [c for c in cols_map.values() if c in export_df.columns] + ['تفاصيل_إضافية']
+    export_df = export_df[final_cols]
+    
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        export_df.to_excel(writer, index=False, sheet_name='التقرير')
+    return output.getvalue()
 
 # ==========================================
 # 4. التنسيق (CSS)
@@ -241,8 +247,6 @@ st.markdown("""
     .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
     .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
-    
-    /* تنسيق خاص للنموذج الديناميكي */
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
 </style>
 """, unsafe_allow_html=True)
@@ -253,7 +257,6 @@ st.markdown("""
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
-# --- تسجيل الدخول ---
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
@@ -279,13 +282,11 @@ if not st.session_state['logged_in']:
                 user = auth_user(u, p)
                 if user:
                     st.session_state['logged_in'] = True
-                    st.session_state['user_id'] = user.id # نخزن الـ ID فقط ونستدعيه لاحقاً
+                    st.session_state['user_id'] = user.id
                     st.rerun()
                 else: st.toast("بيانات خاطئة", icon="❌")
 
-# --- النظام الداخلي ---
 else:
-    # تحميل بيانات المستخدم المحدثة
     session = SessionLocal()
     user = session.query(User).options(joinedload(User.team), joinedload(User.department)).filter(User.id == st.session_state['user_id']).first()
     
@@ -303,13 +304,12 @@ else:
         
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
-            "تسجيل نتاج": "📝 تسجيل نتاج جديد",
             "إدارة الأنشطة": "🗂️ إدارة الأنشطة (تعديل/حذف)",
+            "تسجيل نتاج": "📝 تسجيل نتاج جديد",
             "أعمالي": "📂 سجل أعمالي",
             "الإعدادات": "⚙️ الإعدادات"
         }
-        if user.role == 'admin':
-            menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين"
+        if user.role == 'admin': menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين"
             
         sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
         selection = [k for k, v in menu.items() if v == sel][0]
@@ -322,127 +322,132 @@ else:
     #  1. لوحة القيادة
     # ============================================
     if selection == "لوحة القيادة":
-        target_name = ""
-        if user.role == "dept_head" and user.department: target_name = f": {user.department.name_ar}"
-        elif user.role == "leader" and user.team: target_name = f": {user.team.name}"
-        
-        st.markdown(f"## 📊 لوحة القيادة {target_name}")
-        
+        st.markdown(f"## 📊 لوحة القيادة")
         df = get_smart_data(user)
         
         if not df.empty:
+            # 🆕 زر التصدير (Export)
+            excel_data = to_excel(df)
+            st.download_button(
+                label="📥 تحميل التقرير الكامل (Excel)",
+                data=excel_data,
+                file_name=f'report_{date.today()}.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+            
             k1, k2, k3, k4 = st.columns(4)
             with k4: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{len(df)}</div><div class="kpi-label">الأعمال</div></div><div class="kpi-icon">📚</div></div>', unsafe_allow_html=True)
             with k3: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["user_id"].nunique()}</div><div class="kpi-label">الباحثون</div></div><div class="kpi-icon">👥</div></div>', unsafe_allow_html=True)
             with k2: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{df["points"].sum()}</div><div class="kpi-label">النقاط</div></div><div class="kpi-icon">⭐</div></div>', unsafe_allow_html=True)
             with k1: 
                 yr = df['year'].mode()[0] if not df.empty else "-"
-                st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">الأكثر نشاطاً</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">السنة النشطة</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
 
-            c_g1, c_g2 = st.columns([1, 1])
-            with c_g2:
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.markdown("##### 📊 توزيع الأنشطة")
-                fig_d = px.pie(df, names='activity_type', hole=0.5, color_discrete_sequence=px.colors.sequential.Blues_r)
-                st.plotly_chart(fig_d, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-            with c_g1:
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.markdown("##### 📈 التطور السنوي")
-                y_df = df.groupby('year').size().reset_index(name='count')
-                fig_b = px.bar(y_df, x='year', y='count', text_auto=True, color_discrete_sequence=['#2563eb'])
-                st.plotly_chart(fig_b, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-        else: st.warning("لا توجد بيانات.")
+            c1, c2 = st.columns(2)
+            with c1:
+                fig = px.pie(df, names='activity_type', title="توزيع الأنشطة", hole=0.5, color_discrete_sequence=px.colors.sequential.Blues_r)
+                st.plotly_chart(fig, use_container_width=True)
+            with c2:
+                daily = df.groupby('year').size().reset_index(name='count')
+                fig2 = px.bar(daily, x='year', y='count', title="التطور السنوي", text_auto=True)
+                st.plotly_chart(fig2, use_container_width=True)
+        else: st.info("لا توجد بيانات.")
 
     # ============================================
-    #  2. تسجيل نتاج (الديناميكي + الهيكلي)
+    #  2. تسجيل نتاج (الديناميكي الكامل)
     # ============================================
     elif selection == "تسجيل نتاج":
         st.title("📝 تسجيل نتاج علمي جديد")
         
-        # 1. الاختيار خارج النموذج (للديناميكية)
-        st.markdown("##### 📌 اختر نوع النشاط لتخصيص الحقول:")
-        w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
+        # اختيار النوع خارج النموذج (للتحديث الفوري)
+        w_type = st.selectbox("📌 نوع النشاط", ACTIVITY_TYPES)
         st.markdown("---")
         
-        if 'form_id' not in st.session_state: st.session_state['form_id'] = int(time.time())
+        if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
         
-        with st.form(key=f"w_form_{st.session_state['form_id']}"):
-            col_main1, col_main2 = st.columns([3, 1])
-            with col_main1: w_title = st.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
-            with col_main2: w_date = st.date_input("تاريخ النشر *", key=f"d_{w_type}")
-            w_lang = st.selectbox("لغة العمل", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
-
+        with st.form(key=f"f_{st.session_state['fid']}"):
+            c1, c2 = st.columns([3, 1])
+            title = c1.text_input("العنوان الكامل *", key=f"t_{w_type}")
+            date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
+            lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
+            
             st.markdown(f"**📄 تفاصيل: {w_type}**")
-            details_data = {"language": w_lang}
-            w_class, w_points = "غير مصنف", 10
+            details = {"lang": lang}
+            pts, cls = 10, "غير مصنف"
 
             # الحقول الديناميكية
             if w_type == "مقال في مجلة علمية":
-                c1, c2 = st.columns(2)
-                with c1:
-                    journal = st.text_input("اسم المجلة *", key=f"j_{w_type}")
-                    issn = st.text_input("الرقم التسلسلي (ISSN)", key=f"i_{w_type}")
-                    url_link = st.text_input("رابط المقال", key=f"u_{w_type}")
-                with c2:
-                    w_class = st.selectbox("تصنيف المجلة", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"], key=f"c_{w_type}")
-                    indexing = st.multiselect("الفهرسة", ["ASJP", "Scopus", "Web of Science"], key=f"x_{w_type}")
-                    vol_issue = st.text_input("المجلد (Vol) / العدد (No)", key=f"v_{w_type}")
-                
-                details_data.update({"journal": journal, "issn": issn, "indexing": indexing, "volume_issue": vol_issue, "url": url_link})
-                if w_class in ["A", "Q1"]: w_points = 100
-                elif w_class in ["B", "Q2"]: w_points = 75
-                elif w_class == "C": w_points = 50
-                else: w_points = 25
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    j = st.text_input("اسم المجلة", key=f"jn_{w_type}")
+                    issn = st.text_input("ISSN", key=f"is_{w_type}")
+                with col_b:
+                    cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"], key=f"cl_{w_type}")
+                    idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "Web of Science"], key=f"ix_{w_type}")
+                details.update({"journal": j, "issn": issn, "indexing": idx})
+                pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
 
             elif w_type == "مداخلة في مؤتمر":
-                c1, c2 = st.columns(2)
-                with c1:
-                    conf_name = st.text_input("اسم الملتقى *", key=f"cnf_{w_type}")
-                    organizer = st.text_input("الجهة المنظمة", key=f"org_{w_type}")
-                with c2:
-                    scope = st.selectbox("النطاق", ["وطني", "دولي"], key=f"sc_{w_type}")
-                    location = st.text_input("مكان الانعقاد", key=f"loc_{w_type}")
-                
-                details_data.update({"conference": conf_name, "organizer": organizer, "scope": scope, "location": location})
-                w_class = scope
-                w_points = 50 if scope == "دولي" else 25
+                conf = st.text_input("اسم الملتقى", key=f"cn_{w_type}")
+                scope = st.selectbox("النطاق", ["وطني", "دولي"], key=f"sc_{w_type}")
+                details.update({"conf": conf, "scope": scope})
+                pts = 50 if scope == "دولي" else 25
 
             elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
-                c1, c2 = st.columns(2)
-                with c1:
-                    publisher = st.text_input("دار النشر *", key=f"pub_{w_type}")
-                    isbn = st.text_input("ISBN", key=f"isbn_{w_type}")
-                with c2:
-                    pages = st.text_input("عدد الصفحات", key=f"pg_{w_type}")
-                details_data.update({"publisher": publisher, "isbn": isbn, "pages": pages})
-                w_points = 80
+                pub = st.text_input("دار النشر", key=f"pb_{w_type}")
+                isbn = st.text_input("ISBN", key=f"sb_{w_type}")
+                details.update({"publisher": pub, "isbn": isbn})
+                pts = 80
 
-            elif w_type == "مشروع بحث":
-                c1, c2 = st.columns(2)
-                with c1:
-                    code = st.text_input("رمز المشروع", key=f"cod_{w_type}")
-                    role = st.selectbox("الصفة", ["رئيس", "عضو"], key=f"rol_{w_type}")
-                with c2:
-                    kind = st.selectbox("النوع", ["PRFU", "PNR", "CNEPRU"], key=f"knd_{w_type}")
-                details_data.update({"code": code, "role": role, "kind": kind})
-                w_points = 60
-
-            st.markdown("---")
             if st.form_submit_button("💾 حفظ البيانات"):
-                if w_title:
-                    json_details = json.dumps(details_data, ensure_ascii=False)
-                    if add_work_service(user.id, w_title, json_details, w_type, w_class, w_date, w_points):
-                        st.toast("✅ تم الحفظ بنجاح!", icon="🎉")
-                        time.sleep(1)
-                        st.session_state['form_id'] = int(time.time())
-                        st.rerun()
-                    else: st.error("خطأ في الاتصال")
-                else: st.warning("العنوان مطلوب")
+                if title:
+                    add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
+                    st.toast("تم الحفظ!", icon="✅"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
+                else: st.error("العنوان مطلوب")
 
     # ============================================
-    #  3. إدارة المستخدمين (للمدير)
+    #  3. إدارة الأنشطة (بحث + تعديل + حذف)
+    # ============================================
+    elif selection == "إدارة الأنشطة":
+        st.title("🗂️ إدارة الأنشطة البحثية")
+        
+        # 🆕 شريط البحث
+        search_term = st.text_input("🔎 بحث (العنوان، اسم الباحث، النوع)...")
+        
+        df = get_smart_data(user)
+        if not df.empty:
+            # تصفية الجدول بناءً على البحث
+            if search_term:
+                df = df[df['title'].str.contains(search_term, na=False) | 
+                        df['full_name'].str.contains(search_term, na=False) |
+                        df['activity_type'].str.contains(search_term, na=False)]
+            
+            st.info(f"عدد النتائج: {len(df)}")
+            
+            for i, row in df.iterrows():
+                # استخراج التفاصيل لعرضها
+                det_txt = ""
+                try: 
+                    d = json.loads(row['details'])
+                    det_txt = " | ".join([f"{k}: {v}" for k, v in d.items() if v])
+                except: pass
+
+                with st.expander(f"{row['activity_type']} - {row['title']} (👤 {row['full_name']})"):
+                    st.caption(f"📅 {row['publication_date']} | ⭐ {row['points']} نقطة | 🏷️ {det_txt}")
+                    
+                    c1, c2 = st.columns([3, 1])
+                    new_t = c1.text_input("تعديل العنوان", row['title'], key=f"et_{row['id']}")
+                    new_d = c2.date_input("تعديل التاريخ", pd.to_datetime(row['publication_date']).date(), key=f"ed_{row['id']}")
+                    
+                    b1, b2 = st.columns(2)
+                    if b1.button("حفظ التعديلات", key=f"sv_{row['id']}"):
+                        update_work_service(row['id'], new_t, new_d); st.toast("تم التعديل"); time.sleep(1); st.rerun()
+                    if b2.button("حذف نهائي", key=f"dl_{row['id']}"):
+                        delete_work_service(row['id']); st.toast("تم الحذف"); time.sleep(1); st.rerun()
+        else: st.info("لا توجد بيانات.")
+
+    # ============================================
+    #  4. إدارة المستخدمين (Admin)
     # ============================================
     elif selection == "إدارة المستخدمين":
         st.title("👥 إدارة المستخدمين")
@@ -455,49 +460,28 @@ else:
             
             depts = session.query(Department).all()
             d_map = {d.name_ar: d.id for d in depts}
-            sel_d = st.selectbox("القسم", list(d_map.keys()))
+            sel_d = st.selectbox("القسم", list(d_map.keys())) if d_map else None
             
             sel_t_id = None
-            if role != "رئيس قسم":
+            if role != "رئيس قسم" and sel_d:
                 teams = session.query(Team).filter_by(department_id=d_map[sel_d]).all()
-                if teams:
-                    t_map = {t.name: t.id for t in teams}
+                t_map = {t.name: t.id for t in teams}
+                if t_map:
                     sel_t = st.selectbox("الفرقة", list(t_map.keys()))
                     sel_t_id = t_map[sel_t]
-                else: st.warning("لا توجد فرق في هذا القسم")
             
             if st.form_submit_button("إضافة"):
                 r_code = "dept_head" if role == "رئيس قسم" else ("leader" if role == "رئيس فرقة" else "researcher")
-                if add_user_service(uname, name, pas, r_code, sel_t_id, d_map[sel_d]):
+                if add_user_service(uname, name, pas, r_code, sel_t_id, d_map.get(sel_d)):
                     st.success("تمت الإضافة")
-                else: st.error("المستخدم موجود")
+                else: st.error("خطأ (ربما المستخدم مكرر)")
 
-    # ============================================
-    #  4. إدارة الأنشطة (تعديل وحذف)
-    # ============================================
-    elif selection == "إدارة الأنشطة":
-        st.title("🗂️ إدارة الأنشطة")
-        df = get_smart_data(user)
-        if not df.empty:
-            for i, row in df.iterrows():
-                with st.expander(f"{row['activity_type']} | {row['title']}"):
-                    c1, c2 = st.columns([3, 1])
-                    nt = c1.text_input("العنوان", row['title'], key=f"ett_{row['id']}")
-                    nd = c2.date_input("التاريخ", pd.to_datetime(row['publication_date']).date(), key=f"etd_{row['id']}")
-                    b1, b2 = st.columns(2)
-                    if b1.button("حفظ التعديل", key=f"sav_{row['id']}"):
-                        update_work_service(row['id'], nt, nd); st.toast("تم"); time.sleep(1); st.rerun()
-                    if b2.button("حذف", key=f"del_{row['id']}"):
-                        delete_work_service(row['id']); st.toast("حذف"); time.sleep(1); st.rerun()
-        else: st.info("لا توجد بيانات")
-
-    # --- صفحات العرض ---
     elif selection == "أعمالي":
         st.title("📂 أعمالي")
         df = get_smart_data(user)
-        my_df = df[df['user_id'] == user.id]
-        if not my_df.empty: st.dataframe(my_df[['title', 'activity_type', 'points']], use_container_width=True)
-        else: st.info("فارغ")
+        df_my = df[df['user_id'] == user.id]
+        if not df_my.empty: st.dataframe(df_my[['title', 'activity_type', 'points']])
+        else: st.info("لا توجد أعمال")
 
     elif selection == "الإعدادات":
         st.title("⚙️ الإعدادات")
