@@ -19,7 +19,7 @@ st.set_page_config(
     page_icon="🎓"
 )
 
-# --- الثوابت ---
+# --- ثوابت النظام ---
 ACTIVATION_CODES = {
     "admin": "ADMIN2025",
     "dept_head": "HEAD2025",
@@ -107,14 +107,13 @@ def auto_init_system():
             Base.metadata.create_all(bind=engine)
         session = SessionLocal()
         if not session.query(User).filter_by(username="admin").first():
-            # إنشاء الهيكل الأساسي
             depts_data = ["الدراسات السوسيولوجية", "علم النفس", "علوم التربية", "الأرطوفونيا", "الفلسفة", "التاريخ"]
             for name in depts_data:
-                d = Department(name_ar=name)
-                session.add(d)
-                session.flush()
-                session.add(Team(name=f"فرقة بحث {name}", department_id=d.id))
-            
+                if not session.query(Department).filter_by(name_ar=name).first():
+                    d = Department(name_ar=name)
+                    session.add(d)
+                    session.flush()
+                    session.add(Team(name=f"فرقة بحث {name}", department_id=d.id))
             pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
             session.add(User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin"))
             session.commit()
@@ -135,19 +134,27 @@ def auth_user(u, p):
 def register_user_secure(u, f, p, role, code, t_id, d_id):
     if code != ACTIVATION_CODES.get(role):
         return False, "⛔ كود التفعيل غير صحيح!"
-    
     s = SessionLocal()
     try:
         if s.query(User).filter(User.username == u).first():
             return False, "⚠️ اسم المستخدم موجود مسبقاً"
-        
         h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
         s.add(User(username=u, full_name=f, password_hash=h, role=role, team_id=t_id, department_id=d_id, member_type="permanent"))
         s.commit()
         return True, "✅ تم إنشاء الحساب بنجاح"
     except Exception as e:
-        s.rollback()
-        return False, f"خطأ: {str(e)}"
+        s.rollback(); return False, f"خطأ: {str(e)}"
+    finally: s.close()
+
+def add_user_manual(u, f, p, role, t_id, d_id):
+    s = SessionLocal()
+    try:
+        if s.query(User).filter(User.username == u).first(): return False, "موجود مسبقاً"
+        h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+        s.add(User(username=u, full_name=f, password_hash=h, role=role, team_id=t_id, department_id=d_id, member_type="permanent"))
+        s.commit()
+        return True, "تمت الإضافة"
+    except: s.rollback(); return False, "خطأ"
     finally: s.close()
 
 def add_work_service(uid, title, details_json, atype, cls, date_obj, pts):
@@ -195,7 +202,7 @@ def get_img_as_base64(file_path):
         return base64.b64encode(data).decode()
     except: return None
 
-# 📊 دالة جلب البيانات المحسنة (تمنع انهيار الرسوم)
+# 📊 دالة جلب البيانات المحسنة (إصلاح الرسوم البيانية)
 def get_smart_data(user):
     base_q = """
     SELECT 
@@ -210,8 +217,7 @@ def get_smart_data(user):
     """
     try:
         df = pd.read_sql(base_q, engine)
-        
-        # ✅ ملء القيم الفارغة ضروري جداً لعمل الرسوم البيانية
+        # ✅ ملء القيم الفارغة لمنع الانهيار
         df['department'] = df['department'].fillna('غير محدد')
         df['team'] = df['team'].fillna('غير محدد')
         df['activity_type'] = df['activity_type'].fillna('غير محدد')
@@ -229,6 +235,7 @@ def get_smart_data(user):
     except Exception as e: 
         return pd.DataFrame()
 
+# 📊 دالة التصدير الآمنة (تمنع الخطأ الأحمر)
 def to_excel(df):
     try:
         output = io.BytesIO()
@@ -244,7 +251,7 @@ def to_excel(df):
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             export_df.to_excel(writer, index=False, sheet_name='التقرير')
         return output.getvalue()
-    except: return None
+    except: return None # إرجاع None في حال فشل المكتبة
 
 # ==========================================
 # 4. التنسيق (CSS)
@@ -254,29 +261,17 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
     :root { --primary: #2563eb; --bg: #f8fafc; }
     html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: #fcfcfc; text-align: right; }
-    h1, h2, h3, h4 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
-    
+    h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { 
-        text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal';
-    }
-    
-    .kpi-container {
-        background-color: white; padding: 20px; border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
-        border-right: 4px solid #3b82f6;
-        display: flex; justify-content: space-between; align-items: center;
-        margin-bottom: 10px; transition: transform 0.2s;
-    }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
+    .kpi-container { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; border-right: 4px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; transition: transform 0.2s; }
     .kpi-container:hover { transform: translateY(-3px); }
     .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
     .kpi-label { font-size: 13px; color: #64748b; font-weight: 600; }
     .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
-    
     .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-    
     .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
 </style>
 """, unsafe_allow_html=True)
@@ -317,7 +312,7 @@ if not st.session_state['logged_in']:
 
         with tab_signup:
             with st.form("signup"):
-                st.markdown("##### 🆕 إنشاء حساب باستخدام كود التفعيل")
+                st.markdown("##### 🆕 إنشاء حساب جديد")
                 c_a, c_b = st.columns(2)
                 new_name = c_a.text_input("الاسم الكامل")
                 new_user = c_b.text_input("اسم المستخدم (للدخول)")
@@ -326,7 +321,7 @@ if not st.session_state['logged_in']:
                 role_labels = {"admin": "مدير المخبر", "dept_head": "رئيس قسم", "leader": "رئيس فرقة", "researcher": "باحث/طالب"}
                 role_key = st.selectbox("الصفة", list(role_labels.keys()), format_func=lambda x: role_labels[x])
                 
-                # جلب الأقسام
+                # --- القوائم المترابطة (Cascading Dropdowns) ---
                 session = SessionLocal()
                 depts = session.query(Department).all()
                 d_map = {d.name_ar: d.id for d in depts}
@@ -334,27 +329,30 @@ if not st.session_state['logged_in']:
                 sel_dept_id = None
                 sel_team_id = None
                 
+                # 1. إذا كان رئيس قسم أو أعلى، نختار القسم
                 if role_key != 'admin':
                     d_name = st.selectbox("القسم", list(d_map.keys()))
                     sel_dept_id = d_map[d_name]
                     
+                    # 2. إذا كان رئيس فرقة أو باحث، نختار الفرقة التابعة للقسم المختار
                     if role_key in ['leader', 'researcher']:
                         teams = session.query(Team).filter_by(department_id=sel_dept_id).all()
-                        t_map = {t.name: t.id for t in teams}
-                        if t_map:
+                        if teams:
+                            t_map = {t.name: t.id for t in teams}
                             t_name = st.selectbox("الفرقة", list(t_map.keys()))
                             sel_team_id = t_map[t_name]
-                        else: st.warning("لا توجد فرق في هذا القسم")
+                        else:
+                            st.warning("⚠️ لا توجد فرق في هذا القسم بعد.")
                 session.close()
 
-                act_code = st.text_input("🔑 كود التفعيل (Activation Code)", type="password")
+                act_code = st.text_input("🔑 كود التفعيل", type="password")
                 
                 if st.form_submit_button("إنشاء الحساب", use_container_width=True):
                     if new_user and new_pass and act_code:
                         success, msg = register_user_secure(new_user, new_name, new_pass, role_key, act_code, sel_team_id, sel_dept_id, "permanent")
                         if success: st.success(msg)
                         else: st.error(msg)
-                    else: st.warning("املأ جميع الحقول")
+                    else: st.warning("جميع الحقول مطلوبة")
 
 # --- النظام الداخلي ---
 else:
@@ -377,7 +375,7 @@ else:
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "تسجيل نتاج": "📝 تسجيل نتاج جديد",
-            "إدارة الأنشطة": "🗂️ إدارة الأنشطة (تعديل/حذف)",
+            "إدارة الأنشطة": "🗂️ إدارة الأنشطة",
             "أعمالي": "📂 سجل أعمالي",
             "الإعدادات": "⚙️ الإعدادات"
         }
@@ -397,7 +395,7 @@ else:
         df = get_smart_data(user)
         
         if not df.empty:
-            # فلاتر احترافية
+            # الفلاتر المترابطة (Cascading Dashboard Filters)
             with st.expander("🔍 تصفية البيانات (Advanced Filters)", expanded=True):
                 c1, c2, c3, c4 = st.columns(4)
                 years = sorted(df['year'].unique().tolist(), reverse=True)
@@ -406,12 +404,12 @@ else:
                 depts = sorted(df['department'].unique().tolist())
                 sel_dept = c2.selectbox("القسم", ["الكل"] + depts)
                 
-                # تحديث الفرق بناء على القسم
+                # الفلترة المترابطة: الفرق تظهر حسب القسم المختار
                 if sel_dept != "الكل":
-                    teams = sorted(df[df['department'] == sel_dept]['team'].unique().tolist())
+                    teams_list = sorted(df[df['department'] == sel_dept]['team'].unique().tolist())
                 else:
-                    teams = sorted(df['team'].unique().tolist())
-                sel_team = c3.selectbox("الفرقة", ["الكل"] + teams)
+                    teams_list = sorted(df['team'].unique().tolist())
+                sel_team = c3.selectbox("الفرقة", ["الكل"] + teams_list)
                 
                 types = sorted(df['activity_type'].unique().tolist())
                 sel_type = c4.selectbox("نوع النشاط", ["الكل"] + types)
@@ -423,12 +421,12 @@ else:
             if sel_team != "الكل": filtered = filtered[filtered['team'] == sel_team]
             if sel_type != "الكل": filtered = filtered[filtered['activity_type'] == sel_type]
 
-            # زر التصدير
+            # زر التصدير (مع الحماية)
             excel_data = to_excel(filtered)
             if excel_data:
                 st.download_button("📥 تحميل التقرير (Excel)", excel_data, f"report_{date.today()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             else:
-                st.warning("⚠️ مكتبة xlsxwriter غير مثبتة. لا يمكن التصدير.")
+                st.warning("⚠️ يرجى تثبيت مكتبة xlsxwriter لتفعيل التصدير.")
 
             st.markdown("<br>", unsafe_allow_html=True)
             k1, k2, k3, k4 = st.columns(4)
@@ -477,7 +475,6 @@ else:
             details = {"lang": lang}
             pts, cls = 10, "غير مصنف"
 
-            # الحقول الديناميكية
             if w_type == "مقال في مجلة علمية":
                 c1, c2 = st.columns(2)
                 j = c1.text_input("اسم المجلة *", key=f"jn_{w_type}")
@@ -501,11 +498,11 @@ else:
                 pub = c1.text_input("دار النشر *", key=f"pb_{w_type}")
                 isbn = c2.text_input("ISBN", key=f"sb_{w_type}")
                 details.update({"publisher": pub, "isbn": isbn})
-                pts = 80
+                pts = 80 if w_type == "تأليف كتاب" else 40
 
             elif w_type == "تأطير مذكرة":
                 c1, c2 = st.columns(2)
-                stud = c1.text_input("اسم الطالب *", key=f"st_{w_type}")
+                stud = c1.text_input("اسم الطالب", key=f"st_{w_type}")
                 lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"], key=f"lv_{w_type}")
                 details.update({"student": stud, "level": lvl})
                 pts = 20
@@ -549,7 +546,6 @@ else:
                     c1, c2 = st.columns([3, 1])
                     nt = c1.text_input("تعديل العنوان", row['title'], key=f"edt_{row['id']}")
                     nd = c2.date_input("تعديل التاريخ", pd.to_datetime(row['publication_date']).date(), key=f"edd_{row['id']}")
-                    
                     b1, b2 = st.columns(2)
                     if b1.button("حفظ التعديلات", key=f"sv_{row['id']}"):
                         update_work_service(row['id'], nt, nd); st.toast("تم التعديل"); time.sleep(1); st.rerun()
@@ -568,22 +564,29 @@ else:
             pas = st.text_input("كلمة المرور", type="password")
             role = st.selectbox("الصفة", ["رئيس قسم", "رئيس فرقة", "باحث"])
             
+            session = SessionLocal()
             depts = session.query(Department).all()
             d_map = {d.name_ar: d.id for d in depts}
-            sel_d = st.selectbox("القسم", list(d_map.keys())) if d_map else None
             
-            sel_t_id = None
-            if role != "رئيس قسم" and sel_d:
-                teams = session.query(Team).filter_by(department_id=d_map[sel_d]).all()
-                t_map = {t.name: t.id for t in teams}
-                if t_map:
-                    sel_t = st.selectbox("الفرقة", list(t_map.keys()))
-                    sel_t_id = t_map[sel_t]
-                else: st.warning("لا توجد فرق في هذا القسم")
+            # 1. اختيار القسم
+            d_name = st.selectbox("القسم", list(d_map.keys()))
+            sel_dept_id = d_map[d_name]
+            
+            sel_team_id = None
+            # 2. اختيار الفرقة (فقط إذا لم يكن رئيس قسم)
+            if role != 'dept_head':
+                teams = session.query(Team).filter_by(department_id=sel_dept_id).all()
+                if teams:
+                    t_map = {t.name: t.id for t in teams}
+                    t_name = st.selectbox("الفرقة", list(t_map.keys()))
+                    sel_team_id = t_map[t_name]
+                else: st.warning("⚠️ هذا القسم لا يحتوي على فرق بعد.")
+            
+            session.close()
             
             if st.form_submit_button("إضافة المستخدم"):
                 r_code = "dept_head" if role == "رئيس قسم" else ("leader" if role == "رئيس فرقة" else "researcher")
-                if add_user_service(uname, name, pas, r_code, sel_t_id, d_map.get(sel_d)):
+                if add_user_manual(uname, name, pas, r_code, sel_team_id, sel_dept_id):
                     st.success("تمت الإضافة بنجاح")
                 else: st.error("خطأ: اسم المستخدم موجود مسبقاً")
 
