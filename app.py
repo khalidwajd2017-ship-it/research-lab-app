@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text, inspect
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
-from datetime import date
+from datetime import date, timedelta
 import plotly.express as px
 import time
 import json 
@@ -191,9 +191,9 @@ def get_img_as_base64(file_path):
         return base64.b64encode(data).decode()
     except: return None
 
-# 📊 دالة جلب البيانات (تم إصلاح خطأ KeyError و NaN)
+# 📊 دالة جلب البيانات (تم إصلاح خطأ KeyError)
 def get_smart_data(user):
-    # 🔴 هام: تمت إضافة w.user_id للاستعلام لحل مشكلة KeyError
+    # تم إضافة w.user_id صراحةً لحل مشكلة KeyError
     base_q = """
     SELECT 
         w.id, w.user_id, w.title, w.activity_type, w.publication_date, w.year, w.points, w.classification, w.details,
@@ -208,13 +208,17 @@ def get_smart_data(user):
     try:
         df = pd.read_sql(base_q, engine)
         
-        # ✅ ملء القيم الفارغة لمنع انهيار الرسوم البيانية
+        # تحويل عمود التاريخ إلى datetime لضمان عمل فلتر التاريخ
+        df['publication_date'] = pd.to_datetime(df['publication_date']).dt.date
+        
+        # ملء الفراغات
         df['department'] = df['department'].fillna('غير محدد')
         df['team'] = df['team'].fillna('غير محدد')
         df['activity_type'] = df['activity_type'].fillna('غير محدد')
         
         if df.empty: return df
         
+        # فلاتر الصلاحيات
         if user.role == 'admin': return df
         elif user.role == 'dept_head': 
             if user.department: return df[df['department'] == user.department.name_ar]
@@ -227,7 +231,7 @@ def get_smart_data(user):
         print(e)
         return pd.DataFrame()
 
-# 📊 دالة التصدير (مع معالجة الأخطاء)
+# 📊 دالة التصدير
 def to_excel(df):
     try:
         output = io.BytesIO()
@@ -286,13 +290,7 @@ if not st.session_state['logged_in']:
             if img: logo_html = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 150px; margin-bottom: 20px;"></div>'
 
         st.markdown(logo_html, unsafe_allow_html=True)
-        #st.markdown("""<div style="text-align: center; margin-bottom: 30px;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1><p style="color:#64748b;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
-        st.markdown("""
-        <div style="text-align: center !important; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 30px; width: 100%;">
-            <h1 style="color:#1e40af; font-family:'Cairo'; margin: 0; text-align: center !important;">بوابة البحث العلمي</h1>
-            <p style="color:#64748b; text-align: center !important; margin-top: 5px;">نظام إدارة المخابر الجامعية الموحد</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div style="text-align: center; margin-bottom: 30px;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1><p style="color:#64748b;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
         
         tab_login, tab_signup = st.tabs(["🔐 تسجيل الدخول", "📝 حساب جديد (بالكود)"])
         
@@ -309,7 +307,6 @@ if not st.session_state['logged_in']:
                     else: st.error("بيانات خاطئة")
 
         with tab_signup:
-            # 💡 تم إزالة النموذج (st.form) لتفعيل القوائم المترابطة
             st.markdown("##### 🆕 إنشاء حساب باستخدام كود التفعيل")
             
             c_a, c_b = st.columns(2)
@@ -330,12 +327,12 @@ if not st.session_state['logged_in']:
             sel_dept_id = None
             sel_team_id = None
             
-            # 1. إذا كان رئيس قسم أو فرقة أو باحث -> اختر القسم
+            # 1. إذا كان رئيس قسم أو أعلى -> اختر القسم
             if role_key != 'admin':
                 d_name = st.selectbox("القسم", list(d_map.keys()))
                 sel_dept_id = d_map[d_name]
                 
-                # 2. إذا كان رئيس فرقة أو باحث -> اختر الفرقة التابعة للقسم المختار فقط
+                # 2. إذا كان رئيس فرقة أو باحث -> اختر الفرقة
                 if role_key in ['leader', 'researcher']:
                     teams = session.query(Team).filter_by(department_id=sel_dept_id).all()
                     if teams:
@@ -343,7 +340,7 @@ if not st.session_state['logged_in']:
                         t_name = st.selectbox("الفرقة", list(t_map.keys()))
                         sel_team_id = t_map[t_name]
                     else:
-                        st.warning("⚠️ هذا القسم لا يحتوي على فرق بعد. يرجى الاتصال بالمدير.")
+                        st.warning("⚠️ هذا القسم لا يحتوي على فرق بعد.")
             session.close()
 
             act_code = st.text_input("🔑 كود التفعيل", type="password")
@@ -390,40 +387,48 @@ else:
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # --- 1. لوحة القيادة ---
+    # --- 1. لوحة القيادة (مع فلتر التاريخ الجديد) ---
     if selection == "لوحة القيادة":
         st.markdown(f"## 📊 لوحة القيادة والتحليل البياني")
         df = get_smart_data(user)
         
         if not df.empty:
-            # فلاتر مترابطة
-            with st.expander("🔍 تصفية البيانات (Advanced Filters)", expanded=True):
-                c1, c2, c3, c4 = st.columns(4)
-                years = sorted(df['year'].unique().tolist(), reverse=True)
-                sel_year = c1.selectbox("السنة", ["الكل"] + years)
+            # فلترة التاريخ (من - إلى)
+            with st.expander("📅 تصفية الفترة الزمنية والفئات", expanded=True):
+                col_d1, col_d2 = st.columns(2)
+                min_d = df['publication_date'].min()
+                max_d = df['publication_date'].max()
                 
+                start_d = col_d1.date_input("من تاريخ", min_d)
+                end_d = col_d2.date_input("إلى تاريخ", max_d)
+                
+                # الفلاتر الأخرى
+                c1, c2, c3 = st.columns(3)
                 depts = sorted(df['department'].unique().tolist())
-                sel_dept = c2.selectbox("القسم", ["الكل"] + depts)
+                sel_dept = c1.selectbox("القسم", ["الكل"] + depts)
                 
                 if sel_dept != "الكل":
                     teams = sorted(df[df['department'] == sel_dept]['team'].unique().tolist())
                 else:
                     teams = sorted(df['team'].unique().tolist())
-                sel_team = c3.selectbox("الفرقة", ["الكل"] + teams)
+                sel_team = c2.selectbox("الفرقة", ["الكل"] + teams)
                 
                 types = sorted(df['activity_type'].unique().tolist())
-                sel_type = c4.selectbox("نوع النشاط", ["الكل"] + types)
+                sel_type = c3.selectbox("نوع النشاط", ["الكل"] + types)
 
-            filtered = df.copy()
-            if sel_year != "الكل": filtered = filtered[filtered['year'] == sel_year]
+            # تطبيق الفلاتر
+            mask = (df['publication_date'] >= start_d) & (df['publication_date'] <= end_d)
+            filtered = df.loc[mask]
+            
             if sel_dept != "الكل": filtered = filtered[filtered['department'] == sel_dept]
             if sel_team != "الكل": filtered = filtered[filtered['team'] == sel_team]
             if sel_type != "الكل": filtered = filtered[filtered['activity_type'] == sel_type]
 
+            # زر التصدير
             excel_data = to_excel(filtered)
             if excel_data:
                 st.download_button("📥 تحميل التقرير (Excel)", excel_data, f"report_{date.today()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            
+
             st.markdown("<br>", unsafe_allow_html=True)
             k1, k2, k3, k4 = st.columns(4)
             with k4: st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{len(filtered)}</div><div class="kpi-label">إجمالي النتاج</div></div><div class="kpi-icon">📚</div></div>', unsafe_allow_html=True)
@@ -549,14 +554,13 @@ else:
                         delete_work_service(row['id']); st.toast("تم الحذف"); time.sleep(1); st.rerun()
         else: st.info("لا توجد بيانات.")
 
-    # --- 4. إدارة المستخدمين (للمدير) ---
+    # --- 4. إدارة المستخدمين ---
     elif selection == "إدارة المستخدمين":
         st.title("👥 إدارة المستخدمين (إضافة يدوية)")
-        st.markdown("##### إضافة حساب جديد")
         
         c1, c2 = st.columns(2)
         name = c1.text_input("الاسم الكامل")
-        uname = c2.text_input("اسم الدخول (Unique)")
+        uname = c2.text_input("اسم الدخول")
         
         c3, c4 = st.columns(2)
         pas = c3.text_input("كلمة المرور", type="password")
@@ -569,7 +573,7 @@ else:
         sel_d_id = None
         sel_t_id = None
         
-        # --- نفس منطق الترابط ---
+        # القوائم المترابطة
         if role != "رئيس قسم":
             d_name = st.selectbox("القسم", list(d_map.keys()))
             sel_d_id = d_map[d_name]
@@ -593,7 +597,7 @@ else:
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
         df = get_smart_data(user)
-        # 🟢 هنا تم الإصلاح: الآن df يحتوي على user_id
+        # ✅ الآن يعمل بشكل صحيح لأن user_id موجود في الاستعلام
         df_my = df[df['user_id'] == user.id]
         if not df_my.empty: st.dataframe(df_my[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
         else: st.info("لا توجد أعمال مسجلة لك.")
@@ -608,4 +612,3 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
-
