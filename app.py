@@ -3,7 +3,7 @@ import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text, inspect
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
-from datetime import date, timedelta
+from datetime import date
 import plotly.express as px
 import time
 import json 
@@ -11,7 +11,7 @@ import base64
 import os
 import io
 
-# --- 1. إعدادات الصفحة ---
+# --- 1. إعدادات الصفحة والتصميم ---
 st.set_page_config(
     page_title="URSH - بوابة البحث العلمي",
     layout="wide",
@@ -19,7 +19,7 @@ st.set_page_config(
     page_icon="🎓"
 )
 
-# --- الثوابت ---
+# --- الثوابت وأكواد التفعيل ---
 ACTIVATION_CODES = {
     "admin": "ADMIN2025",
     "dept_head": "HEAD2025",
@@ -33,10 +33,10 @@ ACTIVITY_TYPES = [
 ]
 
 # ==========================================
-# 2. إعدادات قاعدة البيانات
+# 2. الاتصال بقاعدة البيانات
 # ==========================================
 if "db" not in st.secrets:
-    st.error("❌ ملف الأسرار غير موجود.")
+    st.error("❌ ملف الأسرار غير موجود (Secrets Missing).")
     st.stop()
 
 @st.cache_resource
@@ -54,7 +54,7 @@ if not engine: st.stop()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- النماذج (Tables) ---
+# --- تعريف الجداول (Schema) ---
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True)
@@ -98,15 +98,17 @@ class Work(Base):
     researcher = relationship("User", back_populates="works")
 
 # ==========================================
-# 3. الخدمات والدوال
+# 3. الخدمات والدوال المساعدة
 # ==========================================
 def auto_init_system():
+    """تهيئة النظام وإنشاء الجداول والحسابات الأساسية تلقائياً"""
     try:
         inspector = inspect(engine)
         if not inspector.has_table("users"):
             Base.metadata.create_all(bind=engine)
         session = SessionLocal()
         if not session.query(User).filter_by(username="admin").first():
+            # إنشاء الأقسام الافتراضية
             depts_data = ["الدراسات السوسيولوجية", "علم النفس", "علوم التربية", "الأرطوفونيا", "الفلسفة", "التاريخ"]
             for name in depts_data:
                 if not session.query(Department).filter_by(name_ar=name).first():
@@ -114,6 +116,8 @@ def auto_init_system():
                     session.add(d)
                     session.flush()
                     session.add(Team(name=f"فرقة بحث {name}", department_id=d.id))
+            
+            # إنشاء حساب المدير
             pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
             session.add(User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin"))
             session.commit()
@@ -133,17 +137,28 @@ def auth_user(u, p):
 
 def register_user_secure(u, f, p, role, code, t_id, d_id):
     if code != ACTIVATION_CODES.get(role):
-        return False, "⛔ كود التفعيل غير صحيح!"
+        return False, "⛔ كود التفعيل غير صحيح لهذه الصلاحية!"
     s = SessionLocal()
     try:
         if s.query(User).filter(User.username == u).first():
-            return False, "⚠️ اسم المستخدم موجود مسبقاً"
+            return False, "⚠️ اسم المستخدم مسجل مسبقاً"
         h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
         s.add(User(username=u, full_name=f, password_hash=h, role=role, team_id=t_id, department_id=d_id, member_type="permanent"))
         s.commit()
         return True, "✅ تم إنشاء الحساب بنجاح"
     except Exception as e:
-        s.rollback(); return False, f"خطأ: {str(e)}"
+        s.rollback(); return False, f"خطأ تقني: {str(e)}"
+    finally: s.close()
+
+def add_user_manual(u, f, p, role, t_id, d_id):
+    s = SessionLocal()
+    try:
+        if s.query(User).filter(User.username == u).first(): return False, "موجود مسبقاً"
+        h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
+        s.add(User(username=u, full_name=f, password_hash=h, role=role, team_id=t_id, department_id=d_id, member_type="permanent"))
+        s.commit()
+        return True, "تمت الإضافة"
+    except: s.rollback(); return False, "خطأ"
     finally: s.close()
 
 def add_work_service(uid, title, details_json, atype, cls, date_obj, pts):
@@ -191,9 +206,8 @@ def get_img_as_base64(file_path):
         return base64.b64encode(data).decode()
     except: return None
 
-# 📊 دالة جلب البيانات (تم إصلاح خطأ KeyError)
+# 📊 دالة جلب البيانات (Smart Data Fetcher)
 def get_smart_data(user):
-    # تم إضافة w.user_id صراحةً لحل مشكلة KeyError
     base_q = """
     SELECT 
         w.id, w.user_id, w.title, w.activity_type, w.publication_date, w.year, w.points, w.classification, w.details,
@@ -207,18 +221,14 @@ def get_smart_data(user):
     """
     try:
         df = pd.read_sql(base_q, engine)
-        
-        # تحويل عمود التاريخ إلى datetime لضمان عمل فلتر التاريخ
-        df['publication_date'] = pd.to_datetime(df['publication_date']).dt.date
-        
-        # ملء الفراغات
+        # تنظيف البيانات لضمان عمل الرسوم البيانية
         df['department'] = df['department'].fillna('غير محدد')
         df['team'] = df['team'].fillna('غير محدد')
         df['activity_type'] = df['activity_type'].fillna('غير محدد')
         
         if df.empty: return df
         
-        # فلاتر الصلاحيات
+        # تصفية حسب الصلاحية
         if user.role == 'admin': return df
         elif user.role == 'dept_head': 
             if user.department: return df[df['department'] == user.department.name_ar]
@@ -228,10 +238,9 @@ def get_smart_data(user):
             return pd.DataFrame()
         else: return df[df['user_id'] == user.id]
     except Exception as e: 
-        print(e)
         return pd.DataFrame()
 
-# 📊 دالة التصدير
+# 📊 دالة تصدير Excel الآمنة
 def to_excel(df):
     try:
         output = io.BytesIO()
@@ -250,7 +259,7 @@ def to_excel(df):
     except: return None
 
 # ==========================================
-# 4. التنسيق (CSS)
+# 4. التنسيق (CSS) - RTL
 # ==========================================
 st.markdown("""
 <style>
@@ -258,22 +267,33 @@ st.markdown("""
     :root { --primary: #2563eb; --bg: #f8fafc; }
     html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: #fcfcfc; text-align: right; }
     h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
+    
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
-    .kpi-container { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; border-right: 4px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; transition: transform 0.2s; }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { 
+        text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal';
+    }
+    
+    .kpi-container {
+        background-color: white; padding: 20px; border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
+        border-right: 4px solid #3b82f6;
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 10px; transition: transform 0.2s;
+    }
     .kpi-container:hover { transform: translateY(-3px); }
     .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
     .kpi-label { font-size: 13px; color: #64748b; font-weight: 600; }
     .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
+    
     .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
-    [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    
     .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 5. التطبيق
+# 5. واجهة التطبيق
 # ==========================================
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
@@ -287,10 +307,10 @@ if not st.session_state['logged_in']:
         logo_html = '<div style="font-size: 60px; margin-bottom: 10px; text-align:center;">🏛️</div>'
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
-            if img: logo_html = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 150px; margin-bottom: 20px;"></div>'
+            if img: logo_html = f'<div style="display: flex; justify-content: center;"><img src="data:image/png;base64,{img}" style="width: 150px; margin-bottom: 20px;"></div>'
 
         st.markdown(logo_html, unsafe_allow_html=True)
-        st.markdown("""<div style="text-align: center !important; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 30px; width: 100%;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0; text-align: center !important;">بوابة البحث العلمي</h1><p style="color:#64748b; text-align: center !important; margin-top: 5px;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="text-align: center; margin-bottom: 30px;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1><p style="color:#64748b;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
         
         tab_login, tab_signup = st.tabs(["🔐 تسجيل الدخول", "📝 حساب جديد (بالكود)"])
         
@@ -307,6 +327,7 @@ if not st.session_state['logged_in']:
                     else: st.error("بيانات خاطئة")
 
         with tab_signup:
+            # 🌟 القوائم المترابطة (بدون st.form لتحديث فوري)
             st.markdown("##### 🆕 إنشاء حساب باستخدام كود التفعيل")
             
             c_a, c_b = st.columns(2)
@@ -319,7 +340,7 @@ if not st.session_state['logged_in']:
             role_labels = {"admin": "مدير المخبر", "dept_head": "رئيس قسم", "leader": "رئيس فرقة", "researcher": "باحث/طالب"}
             role_key = c_role.selectbox("الصفة", list(role_labels.keys()), format_func=lambda x: role_labels[x])
             
-            # --- المنطق المترابط (Cascading Logic) ---
+            # --- المنطق المترابط (Cascading) ---
             session = SessionLocal()
             depts = session.query(Department).all()
             d_map = {d.name_ar: d.id for d in depts}
@@ -327,12 +348,12 @@ if not st.session_state['logged_in']:
             sel_dept_id = None
             sel_team_id = None
             
-            # 1. إذا كان رئيس قسم أو أعلى -> اختر القسم
+            # 1. إذا لم يكن مديراً، يختار القسم
             if role_key != 'admin':
-                d_name = st.selectbox("القسم", list(d_map.keys()))
+                d_name = st.selectbox("القسم التابع له", list(d_map.keys()))
                 sel_dept_id = d_map[d_name]
                 
-                # 2. إذا كان رئيس فرقة أو باحث -> اختر الفرقة
+                # 2. إذا كان رئيس فرقة أو باحث، يختار الفرقة من القسم المحدد فقط
                 if role_key in ['leader', 'researcher']:
                     teams = session.query(Team).filter_by(department_id=sel_dept_id).all()
                     if teams:
@@ -365,7 +386,7 @@ else:
             if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
         
         st.markdown(sb_logo, unsafe_allow_html=True)
-        st.markdown(f"""<div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;"><h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0;"> وحدة البحث في علوم الإنسان للدراسات الفلسفية، الاجتماعية والانسانية</h3></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;"><h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0;">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
         
         role_map_display = {"admin": "المدير العام", "dept_head": "رئيس قسم", "leader": "رئيس فرقة", "researcher": "باحث"}
         st.info(f"👤 مرحباً: {user.full_name}\n\n🏷️ الصلاحية: {role_map_display.get(user.role, user.role)}")
@@ -387,38 +408,44 @@ else:
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # --- 1. لوحة القيادة (مع فلتر التاريخ الجديد) ---
+    # --- 1. لوحة القيادة ---
     if selection == "لوحة القيادة":
         st.markdown(f"## 📊 لوحة القيادة والتحليل البياني")
         df = get_smart_data(user)
         
         if not df.empty:
-            # فلترة التاريخ (من - إلى)
-            with st.expander("📅 تصفية الفترة الزمنية والفئات", expanded=True):
+            # الفلاتر المترابطة (Cascading)
+            with st.expander("🔍 تصفية البيانات (Advanced Filters)", expanded=True):
+                # فلتر الفترة الزمنية
                 col_d1, col_d2 = st.columns(2)
-                min_d = df['publication_date'].min()
-                max_d = df['publication_date'].max()
+                # تحويل التواريخ لضمان التنسيق
+                df['publication_date'] = pd.to_datetime(df['publication_date']).dt.date
+                min_date = df['publication_date'].min()
+                max_date = df['publication_date'].max()
                 
-                start_d = col_d1.date_input("من تاريخ", min_d)
-                end_d = col_d2.date_input("إلى تاريخ", max_d)
+                d_from = col_d1.date_input("من تاريخ", min_date)
+                d_to = col_d2.date_input("إلى تاريخ", max_date)
                 
-                # الفلاتر الأخرى
+                st.write("---")
                 c1, c2, c3 = st.columns(3)
+                
+                # القسم
                 depts = sorted(df['department'].unique().tolist())
                 sel_dept = c1.selectbox("القسم", ["الكل"] + depts)
                 
+                # الفرقة (تعتمد على القسم)
                 if sel_dept != "الكل":
                     teams = sorted(df[df['department'] == sel_dept]['team'].unique().tolist())
                 else:
                     teams = sorted(df['team'].unique().tolist())
                 sel_team = c2.selectbox("الفرقة", ["الكل"] + teams)
                 
+                # النوع
                 types = sorted(df['activity_type'].unique().tolist())
                 sel_type = c3.selectbox("نوع النشاط", ["الكل"] + types)
 
             # تطبيق الفلاتر
-            mask = (df['publication_date'] >= start_d) & (df['publication_date'] <= end_d)
-            filtered = df.loc[mask]
+            filtered = df[(df['publication_date'] >= d_from) & (df['publication_date'] <= d_to)]
             
             if sel_dept != "الكل": filtered = filtered[filtered['department'] == sel_dept]
             if sel_team != "الكل": filtered = filtered[filtered['team'] == sel_team]
@@ -566,6 +593,7 @@ else:
         pas = c3.text_input("كلمة المرور", type="password")
         role = c4.selectbox("الصفة", ["رئيس قسم", "رئيس فرقة", "باحث"])
         
+        # --- القوائم المترابطة ---
         session = SessionLocal()
         depts = session.query(Department).all()
         d_map = {d.name_ar: d.id for d in depts}
@@ -573,7 +601,6 @@ else:
         sel_d_id = None
         sel_t_id = None
         
-        # القوائم المترابطة
         if role != "رئيس قسم":
             d_name = st.selectbox("القسم", list(d_map.keys()))
             sel_d_id = d_map[d_name]
@@ -597,10 +624,13 @@ else:
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
         df = get_smart_data(user)
-        # ✅ الآن يعمل بشكل صحيح لأن user_id موجود في الاستعلام
-        df_my = df[df['user_id'] == user.id]
-        if not df_my.empty: st.dataframe(df_my[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
-        else: st.info("لا توجد أعمال مسجلة لك.")
+        # ✅ الحل: تم استخدام عمود user_id الموجود الآن في الـ DataFrame
+        if not df.empty and 'user_id' in df.columns:
+            df_my = df[df['user_id'] == user.id]
+            if not df_my.empty: 
+                st.dataframe(df_my[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
+            else: st.info("لا توجد أعمال مسجلة لك.")
+        else: st.info("لا توجد بيانات.")
 
     elif selection == "الإعدادات":
         st.title("⚙️ الإعدادات")
@@ -612,6 +642,3 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
-
-
-
