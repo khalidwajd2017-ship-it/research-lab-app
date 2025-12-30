@@ -365,7 +365,7 @@ else:
             if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
         
         st.markdown(sb_logo, unsafe_allow_html=True)
-        st.markdown(f"""<div style="text-align: center; margin-bottom: 20px;"><h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0;">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;"><h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0;">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
         
         role_map_display = {"admin": "المدير العام", "dept_head": "رئيس قسم", "leader": "رئيس فرقة", "researcher": "باحث"}
         st.info(f"👤 مرحباً: {user.full_name}\n\n🏷️ الصلاحية: {role_map_display.get(user.role, user.role)}")
@@ -612,4 +612,5 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
 
