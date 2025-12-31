@@ -774,11 +774,14 @@ else:
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
         df = get_smart_data(user)
-        if not df.empty and 'user_id' in df.columns:
-            df_my = df[df['user_id'] == user.id]
-            if not df_my.empty: st.dataframe(df_my[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
-            else: st.info("لا توجد أعمال مسجلة لك.")
-        else: st.info("لا توجد بيانات.")
+        if not df.empty:
+            display_cols = ['title', 'activity_type', 'publication_date', 'points']
+            if user.role != 'researcher':
+                display_cols.insert(0, 'researcher')
+            final_cols = [c for c in display_cols if c in df.columns]
+            st.dataframe(df[final_cols], use_container_width=True)
+        else:
+            st.info("لا توجد أعمال مسجلة لك.")
 
     elif selection == "الإعدادات":
         st.title("⚙️ الإعدادات")
