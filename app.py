@@ -601,11 +601,11 @@ else:
             for d in depts:
                 with st.expander(f"{d.name_ar}", expanded=False):
                     show_dept_details(d)
-                    st.markdown("#### 🔽 الفرق التابعة:")
+                    st.markdown('<h5 style="text-align: right; direction: rtl; margin-top: 10px;">🔽 الفرق التابعة:</h5>', unsafe_allow_html=True)
                     for t in d.teams:
                         with st.expander(f"الفرقة: {t.name}"):
-                            show_team_details(t)
-
+                            show_team_details(t)       
+        
         elif user.role == 'dept_head':
             if user.department_id:
                 d = session.query(Department).options(joinedload(Department.teams).joinedload(Team.members)).filter(Department.id == user.department_id).first()
@@ -764,4 +764,5 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
 
