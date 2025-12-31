@@ -385,7 +385,7 @@ if not st.session_state['logged_in']:
             if img: logo_html = f'<div style="display: flex; justify-content: center;"><img src="data:image/png;base64,{img}" style="width: 150px; margin-bottom: 20px;"></div>'
 
         st.markdown(logo_html, unsafe_allow_html=True)
-        st.markdown("""<div style="text-align: center; margin-bottom: 30px;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1><p style="color:#64748b;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; width: 100%; margin-bottom: 30px;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1><p style="color:#64748b; margin-top: 5px;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
         
         tab_login, tab_signup = st.tabs(["🔐 تسجيل الدخول", "📝 حساب جديد (بالكود)"])
         
@@ -790,3 +790,4 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
