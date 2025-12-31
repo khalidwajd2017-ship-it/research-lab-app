@@ -573,7 +573,7 @@ else:
 
             # 3. تبويب البرنامج العلمي
             with tab_prog:
-                st.markdown(f'<div style="text-align: right; direction: rtl; background-color: #e0f7fa; padding: 10px; border-radius: 5px;">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="text-align: justify; direction: rtl; background-color: #e0f7fa; padding: 10px; border-radius: 5px;">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
 
             # 4. تبويب الأعضاء
             with tab_members:
@@ -777,6 +777,7 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
 
 
 
