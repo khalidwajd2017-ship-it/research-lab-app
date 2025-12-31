@@ -303,71 +303,68 @@ def to_excel(df):
     except: return None
 
 # ==========================================
-# 4. التنسيق (CSS) - المحاذاة القسرية
+# 4. التنسيق (CSS) - تم تحديث المحاذاة
 # ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
-    
-    /* Global RTL Settings */
-    html, body, .stApp { 
-        font-family: 'Tajawal', sans-serif !important; 
-        direction: rtl !important; 
-        text-align: right !important;
-        background-color: #fcfcfc;
-    }
-    
-    h1, h2, h3, h4, h5 { font-family: 'Cairo' !important; font-weight: 800; color: #1e3a8a; }
-    
-    /* Sidebar */
+    :root { --primary: #2563eb; --bg: #f8fafc; }
+    html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: #fcfcfc; text-align: right; }
+    h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
+    .kpi-container { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; border-right: 4px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; transition: transform 0.2s; }
+    .kpi-container:hover { transform: translateY(-3px); }
+    .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
+    .kpi-label { font-size: 13px; color: #64748b; font-weight: 600; }
+    .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
+    .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
+    .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
+    [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
     
-    /* Inputs & Forms */
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { 
-        text-align: right !important; 
-        direction: rtl !important; 
-        border-radius: 8px; 
-    }
-    
-    /* Force Right Alignment for Expander Headers and Content */
+    /* --- إصلاح محاذاة القوائم المنسدلة (Expander) لليمين --- */
     [data-testid="stExpander"] {
         direction: rtl !important;
         text-align: right !important;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        background: #fff;
     }
-    
-    [data-testid="stExpander"] details {
-        text-align: right !important;
-    }
-    
     [data-testid="stExpander"] summary {
-        flex-direction: row-reverse !important; /* Move arrow to left */
-        justify-content: flex-end !important; /* Content to right */
+        flex-direction: row-reverse !important; /* وضع السهم على اليمين والنص على اليسار */
+        justify-content: flex-end !important; /* محاذاة المحتوى لليمين */
         text-align: right !important;
-        padding-right: 10px;
+        font-family: 'Cairo', sans-serif !important;
+        font-weight: 700;
+        color: #1e3a8a;
+        padding: 10px !important;
     }
-    
     [data-testid="stExpander"] summary p {
         text-align: right !important;
-        width: 100%;
-        margin: 0;
+        margin: 0 !important;
+        padding-right: 10px !important; /* مسافة بين السهم والنص */
+    }
+    [data-testid="stExpander"] summary:hover {
+        background-color: #f8fafc;
+        color: #2563eb !important;
+    }
+    /* محاذاة المحتوى الداخلي للقائمة */
+    [data-testid="stExpander"] > div {
+         direction: rtl !important;
+         text-align: right !important;
+         padding: 15px !important;
+         border-top: 1px solid #f1f5f9;
     }
     
-    /* Cards Styles */
+    /* بطاقات الهيكل التنظيمي */
     .dept-card { background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; margin-bottom: 15px; border-right: 5px solid #2563eb; }
     .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
     .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
-    
     .team-header { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
-    
-    /* Tabs Alignment */
-    .stTabs [data-baseweb="tab-list"] {
-        justify-content: flex-end;
-        flex-direction: row;
-    }
-    .stTabs [data-baseweb="tab"] {
-        font-family: 'Cairo';
-        direction: rtl;
-    }
+    .field-label { font-weight: bold; color: #1f2937; display: block; margin-bottom: 2px; }
+    .field-val { color: #4b5563; margin-bottom: 10px; display: block; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -489,6 +486,7 @@ else:
                 max_date = df['publication_date'].max()
                 d_from = col_d1.date_input("من تاريخ", min_date)
                 d_to = col_d2.date_input("إلى تاريخ", max_date)
+                
                 c1, c2, c3 = st.columns(3)
                 depts = sorted(df['department'].unique().tolist())
                 sel_dept = c1.selectbox("القسم", ["الكل"] + depts)
