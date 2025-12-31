@@ -453,7 +453,14 @@ else:
             img = get_img_as_base64(logo_path)
             if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
         st.markdown(sb_logo, unsafe_allow_html=True)
-        st.markdown(f"""<div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;"><h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0;">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
+        
+        # --- التعديل هنا: تحديث اسم الوحدة البحثية ---
+        st.markdown(f"""
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
+            <h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.4;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
+        </div>
+        """, unsafe_allow_html=True)
+        # ---------------------------------------------
         
         st.info(f"👤 مرحباً: {user.full_name}")
         
@@ -537,9 +544,7 @@ else:
         st.title("🏢 الهيكل التنظيمي (التفصيلي)")
         session = SessionLocal()
         
-        # دالة عرض تفاصيل الفرقة (محدثة للمحاذاة يمين)
         def show_team_details(t):
-            # 1. عنوان الفرقة (Header)
             st.markdown(f"""
             <div class="team-header" style="background:#e0f2fe; border-right:5px solid #0284c7; text-align: right; direction: rtl;">
                 🧬 <b>{t.name}</b>
@@ -548,11 +553,9 @@ else:
             
             tab_info, tab_prog, tab_members = st.tabs(["📋 بطاقة الفرقة", "🔬 البرنامج العلمي", "👥 القوائم الاسمية"])
             
-            # 2. تبويب المعلومات
             with tab_info:
                 c_a, c_b = st.columns(2)
                 
-                # دالة مساعدة صغيرة لتنسيق الحقول يمين
                 def field(label, value):
                     return f'<div style="text-align: right; direction: rtl; margin-bottom: 5px;"><b>{label}:</b> {value}</div>'
 
@@ -571,11 +574,9 @@ else:
                 st.markdown("---")
                 st.markdown(f'<div style="text-align: justify; text-align-last: right; direction: rtl;"><b>التعريف بالفرقة:</b><br>{t.description or "لا يوجد وصف"}</div>', unsafe_allow_html=True)
 
-            # 3. تبويب البرنامج العلمي
             with tab_prog:
                 st.markdown(f'<div style="text-align: justify; direction: rtl; background-color: #e0f7fa; padding: 10px; border-radius: 5px;">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
 
-            # 4. تبويب الأعضاء
             with tab_members:
                 m_perm = [m for m in t.members if m.member_type == 'permanent']
                 m_phd = [m for m in t.members if m.member_type == 'phd_student']
@@ -584,7 +585,6 @@ else:
                 
                 c1, c2, c3, c4 = st.columns(4)
                 
-                # دالة مساعدة لعرض القوائم يمين
                 def list_members(title, members, icon):
                     html = f'<div style="text-align: right; direction: rtl;"><h6 style="color:#1e3a8a;">{icon} {title}</h6>'
                     if members:
@@ -599,10 +599,10 @@ else:
                 with c2: list_members("طلبة الدكتوراه", m_phd, "🎓")
                 with c3: list_members("ملحق بحث", m_aff, "🤝")
                 with c4: list_members("عضو مشارك", m_assoc, "🌍")
-                    
+
         def show_dept_details(d):
             st.markdown(f"""
-            <div class="dept-card" style="text-align: center; direction: rtl;">
+            <div class="dept-card" style="text-align: right; direction: rtl;">
                 <div class="dept-title">📂 {d.name_ar}</div>
                 <div class="dept-info"><b>اللاتينية:</b> {d.name_la or '-'} | <b>المختصر:</b> {d.short_name or '-'} | <b>الرقم:</b> {d.id}</div>
                 <div class="dept-info" style="color:#b91c1c;"><b>رئيس القسم:</b> {d.head_name or '-'}</div>
@@ -617,8 +617,8 @@ else:
                     st.markdown('<h5 style="text-align: right; direction: rtl; margin-top: 10px;">🔽 الفرق التابعة:</h5>', unsafe_allow_html=True)
                     for t in d.teams:
                         with st.expander(f"الفرقة: {t.name}"):
-                            show_team_details(t)       
-        
+                            show_team_details(t)
+
         elif user.role == 'dept_head':
             if user.department_id:
                 d = session.query(Department).options(joinedload(Department.teams).joinedload(Team.members)).filter(Department.id == user.department_id).first()
@@ -777,8 +777,3 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
-
-
-
-
-
