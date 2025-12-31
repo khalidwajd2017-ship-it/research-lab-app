@@ -257,6 +257,7 @@ def get_img_as_base64(file_path):
         return base64.b64encode(data).decode()
     except: return None
 
+# --- تم تحديث الاستعلام لحل مشكلة رئيس القسم ---
 def get_smart_data(user):
     base_q = """
     SELECT 
@@ -267,8 +268,11 @@ def get_smart_data(user):
     FROM works w
     JOIN users u ON w.user_id = u.id
     LEFT JOIN teams t ON u.team_id = t.id
-    LEFT JOIN departments d ON t.department_id = d.id
+    LEFT JOIN departments d ON u.department_id = d.id 
     """
+    # ملاحظة: تم تغيير d ON t.department_id إلى d ON u.department_id
+    # هذا يضمن ظهور القسم حتى لو لم يكن المستخدم في فرقة (مثل رئيس القسم)
+    
     try:
         df = pd.read_sql(base_q, engine)
         df['department'] = df['department'].fillna('غير محدد')
@@ -277,6 +281,8 @@ def get_smart_data(user):
         df['publication_date'] = pd.to_datetime(df['publication_date']).dt.date
         
         if df.empty: return df
+        
+        # تصفية البيانات حسب الصلاحية
         if user.role == 'admin': return df
         elif user.role == 'dept_head': 
             if user.department: return df[df['department'] == user.department.name_ar]
@@ -285,7 +291,8 @@ def get_smart_data(user):
             if user.team: return df[df['team'] == user.team.name]
             return pd.DataFrame()
         else: return df[df['user_id'] == user.id]
-    except: return pd.DataFrame()
+    except Exception as e: 
+        return pd.DataFrame()
 
 def to_excel(df):
     try:
@@ -454,7 +461,6 @@ else:
             if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
         st.markdown(sb_logo, unsafe_allow_html=True)
         
-        # --- تحديث اسم الوحدة البحثية ---
         st.markdown(f"""
         <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
             <h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.4;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
@@ -582,7 +588,6 @@ else:
                 m_aff = [m for m in t.members if m.member_type == 'affiliate']
                 m_assoc = [m for m in t.members if m.member_type == 'associate']
                 
-                # --- منطق الترتيب: أ.د > د. > ط > الباقي ---
                 def get_rank(member):
                     name = member.full_name.strip() if member.full_name else ""
                     if name.startswith("أ.د"): return 1
@@ -594,7 +599,6 @@ else:
                 m_phd.sort(key=lambda x: (get_rank(x), x.full_name))
                 m_aff.sort(key=lambda x: (get_rank(x), x.full_name))
                 m_assoc.sort(key=lambda x: (get_rank(x), x.full_name))
-                # ---------------------------------------------
 
                 c1, c2, c3, c4 = st.columns(4)
                 
