@@ -589,7 +589,7 @@ else:
 
         def show_dept_details(d):
             st.markdown(f"""
-            <div class="dept-card">
+            <div class="dept-card" style="text-align: center; direction: rtl;">
                 <div class="dept-title">📂 {d.name_ar}</div>
                 <div class="dept-info"><b>اللاتينية:</b> {d.name_la or '-'} | <b>المختصر:</b> {d.short_name or '-'} | <b>الرقم:</b> {d.id}</div>
                 <div class="dept-info" style="color:#b91c1c;"><b>رئيس القسم:</b> {d.head_name or '-'}</div>
@@ -764,3 +764,4 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
