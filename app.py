@@ -454,13 +454,12 @@ else:
             if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
         st.markdown(sb_logo, unsafe_allow_html=True)
         
-        # --- التعديل هنا: تحديث اسم الوحدة البحثية ---
+        # --- تحديث اسم الوحدة البحثية ---
         st.markdown(f"""
         <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
             <h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.4;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
-        # ---------------------------------------------
         
         st.info(f"👤 مرحباً: {user.full_name}")
         
@@ -582,6 +581,12 @@ else:
                 m_phd = [m for m in t.members if m.member_type == 'phd_student']
                 m_aff = [m for m in t.members if m.member_type == 'affiliate']
                 m_assoc = [m for m in t.members if m.member_type == 'associate']
+                
+                # --- فرز الأعضاء أبجدياً ---
+                m_perm.sort(key=lambda x: x.full_name)
+                m_phd.sort(key=lambda x: x.full_name)
+                m_aff.sort(key=lambda x: x.full_name)
+                m_assoc.sort(key=lambda x: x.full_name)
                 
                 c1, c2, c3, c4 = st.columns(4)
                 
