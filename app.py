@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text, inspect
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base, joinedload
 import bcrypt
 from datetime import date
@@ -54,14 +54,14 @@ if not engine: st.stop()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- النماذج (Tables) - تم التحديث ---
+# --- النماذج (Tables) ---
 class Department(Base):
     __tablename__ = "departments"
     id = Column(Integer, primary_key=True)
-    name_ar = Column(String)          # اسم القسم بالعربية
-    name_la = Column(String)          # اسم القسم باللاتينية (NEW)
-    short_name = Column(String)       # الاسم المختصر (NEW)
-    head_name = Column(String)        # اسم رئيس القسم (NEW)
+    name_ar = Column(String)
+    name_la = Column(String)
+    short_name = Column(String)
+    head_name = Column(String)
     teams = relationship("Team", back_populates="department")
     users = relationship("User", back_populates="department")
 
@@ -104,45 +104,70 @@ class Work(Base):
 # 3. الخدمات والدوال المساعدة
 # ==========================================
 def auto_init_system():
+    """تهيئة النظام بالبيانات الحقيقية من الصورة المرفقة"""
     try:
         inspector = inspect(engine)
         if not inspector.has_table("users"):
             Base.metadata.create_all(bind=engine)
         
         session = SessionLocal()
-        # التحقق من وجود بيانات الأقسام، إذا لم توجد نقوم بإنشائها بالتفاصيل الجديدة
-        if not session.query(Department).first():
-            # بيانات الأقسام الغنية
-            depts_seed = [
-                {"ar": "الدراسات السوسيولوجية", "la": "Sociological Studies", "sh": "SOC", "head": "د. أحمد سوسيولوجيا"},
-                {"ar": "علم النفس", "la": "Psychology", "sh": "PSY", "head": "د. سارة نفس"},
-                {"ar": "علوم التربية", "la": "Education Sciences", "sh": "EDU", "head": "د. محمد تربية"},
-                {"ar": "الأرطوفونيا", "la": "Orthophony", "sh": "ORT", "head": "د. ليلى أرطو"},
-                {"ar": "الفلسفة", "la": "Philosophy", "sh": "PHIL", "head": "د. كمال فلسفة"},
-                {"ar": "التاريخ والآثار", "la": "History & Archeology", "sh": "HIS", "head": "د. عمر تاريخ"}
-            ]
-            
-            for d_data in depts_seed:
-                d = Department(
+        
+        # 1. تعريف بيانات الأقسام ورؤسائها (من الصورة)
+        departments_data = [
+            {"id": 1, "ar": "الدراسات الفلسفية النظرية", "la": "Theoretical Philosophical Studies", "sh": "TPS", "head": "أ.د. عبد اللاوي عبد الله", "user": "head_tps"},
+            {"id": 2, "ar": "الدراسات الفلسفية التطبيقية", "la": "Applied Philosophical Studies", "sh": "APS", "head": "أ.د. دراس شهر زاد", "user": "head_aps"},
+            {"id": 3, "ar": "الدراسات الدينية والاتجاهات الروحية", "la": "Religious Studies and Spiritual Trends", "sh": "RSST", "head": "أ.د. رزقي بن عومر", "user": "head_rsst"},
+            {"id": 4, "ar": "الدراسات السوسيولوجية", "la": "Sociological Studies", "sh": "SS", "head": "أ.د. شنافي فوزية", "user": "head_ss"},
+            {"id": 5, "ar": "الدراسات الأنثروبولوجية", "la": "Anthropological studies", "sh": "AS", "head": "أ.د. مباركة بلحسن", "user": "head_as"},
+            {"id": 6, "ar": "الدراسات الإنسانية، اللغات، والترجمة", "la": "Humanities, Languages, and Translation", "sh": "HLT", "head": "د. جميل نسيمة", "user": "head_hlt"}
+        ]
+
+        # كلمة مرور موحدة
+        pw_hash = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
+
+        # 2. إنشاء/تحديث الأقسام وحسابات الرؤساء
+        for d_data in departments_data:
+            # التحقق من وجود القسم أو إنشاؤه
+            dept = session.query(Department).filter_by(id=d_data["id"]).first()
+            if not dept:
+                dept = Department(
+                    id=d_data["id"],
                     name_ar=d_data["ar"],
                     name_la=d_data["la"],
                     short_name=d_data["sh"],
                     head_name=d_data["head"]
                 )
-                session.add(d)
-                session.flush()
-                # إنشاء فرقتين لكل قسم
-                session.add(Team(name=f"فرقة {d_data['ar']} (أ)", department_id=d.id))
-                session.add(Team(name=f"فرقة {d_data['ar']} (ب)", department_id=d.id))
+                session.add(dept)
+                session.commit()
+                # إنشاء فرق افتراضية للقسم
+                session.add(Team(name=f"فرقة بحث {d_data['sh']} - أ", department_id=dept.id))
+                session.add(Team(name=f"فرقة بحث {d_data['sh']} - ب", department_id=dept.id))
+                session.commit()
             
-            # إنشاء المدير
-            pw = bcrypt.hashpw("12345".encode(), bcrypt.gensalt()).decode()
-            session.add(User(username="admin", full_name="المدير العام", password_hash=pw, role="admin", member_type="admin"))
+            # إنشاء حساب رئيس القسم
+            user = session.query(User).filter_by(username=d_data["user"]).first()
+            if not user:
+                head_user = User(
+                    username=d_data["user"],
+                    full_name=d_data["head"],
+                    password_hash=pw_hash,
+                    role="dept_head",
+                    member_type="permanent",
+                    department_id=dept.id
+                )
+                session.add(head_user)
+                session.commit()
+
+        # 3. إنشاء المدير العام إذا لم يوجد
+        if not session.query(User).filter_by(username="admin").first():
+            session.add(User(username="admin", full_name="المدير العام", password_hash=pw_hash, role="admin", member_type="admin"))
             session.commit()
+            
         session.close()
     except Exception as e:
-        print(f"Init Error: {e}")
+        print(f"Initialization Error: {e}")
 
+# تشغيل التهيئة عند كل بداية
 auto_init_system()
 
 def auth_user(u, p):
@@ -243,9 +268,7 @@ def get_smart_data(user):
         df['team'] = df['team'].fillna('غير محدد')
         df['activity_type'] = df['activity_type'].fillna('غير محدد')
         df['publication_date'] = pd.to_datetime(df['publication_date']).dt.date
-        
         if df.empty: return df
-        
         if user.role == 'admin': return df
         elif user.role == 'dept_head': 
             if user.department: return df[df['department'] == user.department.name_ar]
@@ -263,12 +286,10 @@ def to_excel(df):
         export_df = df.copy()
         if 'details' in export_df.columns:
             export_df['تفاصيل'] = export_df['details'].apply(lambda x: " | ".join([f"{k}:{v}" for k,v in json.loads(x).items() if v]) if x else "")
-        
         cols_map = {'title': 'العنوان', 'activity_type': 'النوع', 'publication_date': 'التاريخ', 'points': 'النقاط', 'researcher': 'الباحث', 'team': 'الفرقة'}
         export_df = export_df.rename(columns=cols_map)
         final_cols = [c for c in cols_map.values() if c in export_df.columns] + ['تفاصيل']
         export_df = export_df[final_cols] if not export_df.empty else export_df
-        
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             export_df.to_excel(writer, index=False, sheet_name='التقرير')
         return output.getvalue()
@@ -285,17 +306,9 @@ st.markdown("""
     h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
     
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { 
-        text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal';
-    }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
     
-    .kpi-container {
-        background-color: white; padding: 20px; border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9;
-        border-right: 4px solid #3b82f6;
-        display: flex; justify-content: space-between; align-items: center;
-        margin-bottom: 10px; transition: transform 0.2s;
-    }
+    .kpi-container { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; border-right: 4px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; transition: transform 0.2s; }
     .kpi-container:hover { transform: translateY(-3px); }
     .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
     .kpi-label { font-size: 13px; color: #64748b; font-weight: 600; }
@@ -304,14 +317,11 @@ st.markdown("""
     .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
     .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
-    
     .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
     
-    /* تنسيق بطاقة القسم */
     .dept-card { background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; margin-bottom: 15px; }
-    .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 20px; font-weight: bold; }
+    .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
     .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
-    .team-badge { background: #eff6ff; color: #2563eb; padding: 4px 8px; border-radius: 6px; font-size: 12px; margin-left: 5px; display: inline-block; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -321,7 +331,6 @@ st.markdown("""
 
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
-# --- شاشة الدخول والتسجيل ---
 if not st.session_state['logged_in']:
     c1, c2, c3 = st.columns([1, 1.5, 1])
     with c2:
@@ -397,7 +406,6 @@ else:
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
             if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
-        
         st.markdown(sb_logo, unsafe_allow_html=True)
         st.markdown(f"""<div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;"><h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0;">المركز البحثي أدرار</h3></div>""", unsafe_allow_html=True)
         
@@ -406,7 +414,7 @@ else:
         
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
-            "الهيكل التنظيمي": "🏢 الهيكل التنظيمي (الأقسام)", # NEW
+            "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
             "تسجيل نتاج": "📝 تسجيل نتاج جديد",
             "إدارة الأنشطة": "🗂️ إدارة الأنشطة",
             "أعمالي": "📂 سجل أعمالي",
@@ -437,6 +445,7 @@ else:
                 c1, c2, c3 = st.columns(3)
                 depts = sorted(df['department'].unique().tolist())
                 sel_dept = c1.selectbox("القسم", ["الكل"] + depts)
+                
                 if sel_dept != "الكل":
                     teams = sorted(df[df['department'] == sel_dept]['team'].unique().tolist())
                 else:
@@ -451,7 +460,8 @@ else:
             if sel_type != "الكل": filtered = filtered[filtered['activity_type'] == sel_type]
 
             excel_data = to_excel(filtered)
-            if excel_data: st.download_button("📥 تحميل التقرير (Excel)", excel_data, f"report_{date.today()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            if excel_data:
+                st.download_button("📥 تحميل التقرير (Excel)", excel_data, f"report_{date.today()}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
             st.markdown("<br>", unsafe_allow_html=True)
             k1, k2, k3, k4 = st.columns(4)
@@ -480,38 +490,29 @@ else:
                 st.markdown('</div>', unsafe_allow_html=True)
         else: st.info("لا توجد بيانات متاحة لعرضها.")
 
-    # --- 2. الهيكل التنظيمي (الجديد) ---
+    # --- 2. الهيكل التنظيمي ---
     elif selection == "الهيكل التنظيمي":
-        st.title("🏢 الهيكل التنظيمي للمركز")
-        st.markdown("دليل الأقسام والفرق البحثية التابعة لها.")
-        
+        st.title("🏢 الهيكل التنظيمي (الأقسام)")
         session = SessionLocal()
-        # جلب الأقسام مع فرقها
         all_depts = session.query(Department).options(joinedload(Department.teams)).all()
-        
         if all_depts:
             for dept in all_depts:
-                with st.expander(f"📁 {dept.name_ar} ({dept.short_name or '-'})", expanded=False):
-                    c_info, c_teams = st.columns([1, 1.5])
-                    with c_info:
+                with st.expander(f"{dept.name_ar} ({dept.short_name})", expanded=False):
+                    c1, c2 = st.columns([1, 1.5])
+                    with c1:
                         st.markdown(f"""
                         <div class="dept-card">
                             <div class="dept-title">{dept.name_ar}</div>
-                            <div class="dept-info"><b>الاسم اللاتيني:</b> {dept.name_la or 'غير محدد'}</div>
-                            <div class="dept-info"><b>الرقم التعريفي:</b> #{dept.id}</div>
-                            <div class="dept-info"><b>رئيس القسم:</b> {dept.head_name or 'غير محدد'}</div>
+                            <div class="dept-info"><b>الاسم اللاتيني:</b> {dept.name_la}</div>
+                            <div class="dept-info"><b>رئيس القسم:</b> {dept.head_name}</div>
                         </div>
                         """, unsafe_allow_html=True)
-                    
-                    with c_teams:
-                        st.markdown("##### 👥 الفرق البحثية التابعة:")
+                    with c2:
+                        st.markdown("###### 👥 الفرق البحثية:")
                         if dept.teams:
                             for t in dept.teams:
-                                st.markdown(f"- **{t.name}** (ID: {t.id})")
-                        else:
-                            st.info("لا توجد فرق مسجلة.")
-        else:
-            st.warning("لا توجد أقسام مسجلة في قاعدة البيانات.")
+                                st.write(f"- {t.name}")
+                        else: st.info("لا توجد فرق")
         session.close()
 
     # --- 3. تسجيل نتاج ---
@@ -536,46 +537,47 @@ else:
 
             if w_type == "مقال في مجلة علمية":
                 c1, c2 = st.columns(2)
-                j = c1.text_input("اسم المجلة *")
-                issn = c2.text_input("ISSN")
-                cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"])
-                idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"])
+                j = c1.text_input("اسم المجلة *", key=f"jn_{w_type}")
+                issn = c2.text_input("ISSN", key=f"is_{w_type}")
+                cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"], key=f"cl_{w_type}")
+                idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"], key=f"ix_{w_type}")
                 details.update({"journal": j, "issn": issn, "indexing": idx})
                 pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
 
             elif w_type == "مداخلة في مؤتمر":
                 c1, c2 = st.columns(2)
-                conf = c1.text_input("اسم الملتقى *")
-                org = c2.text_input("الجهة المنظمة")
-                scope = st.selectbox("النطاق", ["وطني", "دولي"])
-                details.update({"conf": conf, "organizer": org, "scope": scope})
+                conf = c1.text_input("اسم الملتقى *", key=f"cn_{w_type}")
+                org = c2.text_input("الجهة المنظمة", key=f"og_{w_type}")
+                scope = st.selectbox("النطاق", ["وطني", "دولي"], key=f"sc_{w_type}")
+                loc = st.text_input("المكان", key=f"lc_{w_type}")
+                details.update({"conf": conf, "organizer": org, "scope": scope, "location": loc})
                 pts = 50 if scope == "دولي" else 25
 
             elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
                 c1, c2 = st.columns(2)
-                pub = c1.text_input("دار النشر *")
-                isbn = c2.text_input("ISBN")
+                pub = c1.text_input("دار النشر *", key=f"pb_{w_type}")
+                isbn = c2.text_input("ISBN", key=f"sb_{w_type}")
                 details.update({"publisher": pub, "isbn": isbn})
                 pts = 80 if w_type == "تأليف كتاب" else 40
 
             elif w_type == "تأطير مذكرة":
                 c1, c2 = st.columns(2)
-                stud = c1.text_input("اسم الطالب")
-                lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"])
+                stud = c1.text_input("اسم الطالب", key=f"st_{w_type}")
+                lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"], key=f"lv_{w_type}")
                 details.update({"student": stud, "level": lvl})
                 pts = 20
 
             elif w_type == "مشروع بحث":
                 c1, c2 = st.columns(2)
-                code = c1.text_input("رمز المشروع")
-                role = c2.selectbox("الصفة", ["رئيس", "عضو"])
+                code = c1.text_input("رمز المشروع", key=f"cd_{w_type}")
+                role = c2.selectbox("الصفة", ["رئيس", "عضو"], key=f"rl_{w_type}")
                 details.update({"code": code, "role": role})
                 pts = 60
             
             elif w_type == "براءة اختراع":
                 c1, c2 = st.columns(2)
-                num = c1.text_input("رقم البراءة")
-                body = c2.text_input("الهيئة المانحة")
+                num = c1.text_input("رقم البراءة", key=f"nm_{w_type}")
+                body = c2.text_input("الهيئة المانحة", key=f"bd_{w_type}")
                 details.update({"number": num, "body": body})
                 pts = 150
 
