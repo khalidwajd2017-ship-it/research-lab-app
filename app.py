@@ -569,7 +569,7 @@ else:
                     st.markdown(field("الكلمات المفتاحية", t.keywords or '-'), unsafe_allow_html=True)
                 
                 st.markdown("---")
-                st.markdown(f'<div style="text-align: right; direction: rtl;"><b>التعريف بالفرقة:</b><br>{t.description or "لا يوجد وصف"}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="text-align: justify; text-align-last: right; direction: rtl;"><b>التعريف بالفرقة:</b><br>{t.description or "لا يوجد وصف"}</div>', unsafe_allow_html=True)
 
             # 3. تبويب البرنامج العلمي
             with tab_prog:
@@ -777,6 +777,7 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
 
 
 
