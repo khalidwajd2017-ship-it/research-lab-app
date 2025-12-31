@@ -32,6 +32,14 @@ ACTIVITY_TYPES = [
     "فصل في كتاب", "براءة اختراع", "تأطير مذكرة", "مشروع بحث"
 ]
 
+# أنواع العضوية (للتصنيف في القوائم)
+MEMBER_TYPES = {
+    "permanent": "عضو دائم",
+    "phd_student": "طالب دكتوراه",
+    "attach": "ملحق بحث",
+    "associate": "عضو مشارك"
+}
+
 # ==========================================
 # 2. إعدادات قاعدة البيانات
 # ==========================================
@@ -69,8 +77,15 @@ class Team(Base):
     __tablename__ = "teams"
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    short_name = Column(String) # جديد
-    head_name = Column(String)  # جديد
+    short_name = Column(String)
+    head_name = Column(String)
+    # --- حقول جديدة (التفاصيل العلمية) ---
+    description = Column(Text)             # التعريف بالفرقة
+    thematic_class = Column(String)        # التصنيف الموضوعاتي
+    domains = Column(String)               # الميادين
+    keywords = Column(String)              # الكلمات المفتاحية
+    program_desc = Column(Text)            # وصف علمي لبرنامج البحث
+    # ------------------------------------
     department_id = Column(Integer, ForeignKey("departments.id"))
     department = relationship("Department", back_populates="teams")
     members = relationship("User", back_populates="team")
@@ -82,7 +97,7 @@ class User(Base):
     full_name = Column(String)
     password_hash = Column(String)
     role = Column(String) 
-    member_type = Column(String)
+    member_type = Column(String) # permanent, phd_student, attach, associate
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     team = relationship("Team", back_populates="members")
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
@@ -113,6 +128,7 @@ def auto_init_system():
         
         session = SessionLocal()
         
+        # 1. الأقسام
         departments_data = [
             {"id": 1, "ar": "الدراسات الفلسفية النظرية", "la": "Theoretical Philosophical Studies", "sh": "TPS", "head": "أ.د. عبد اللاوي عبد الله", "user": "head_tps"},
             {"id": 2, "ar": "الدراسات الفلسفية التطبيقية", "la": "Applied Philosophical Studies", "sh": "APS", "head": "أ.د. دراس شهر زاد", "user": "head_aps"},
@@ -134,12 +150,22 @@ def auto_init_system():
                 session.add(dept)
                 session.flush()
                 
-                # إنشاء فرق افتراضية ببيانات كاملة
-                t1 = Team(name=f"فرقة بحث {d_data['sh']} - أ", short_name=f"{d_data['sh']}-A", head_name="د. رئيس الفرقة أ", department_id=dept.id)
-                t2 = Team(name=f"فرقة بحث {d_data['sh']} - ب", short_name=f"{d_data['sh']}-B", head_name="د. رئيس الفرقة ب", department_id=dept.id)
-                session.add_all([t1, t2])
+                # إنشاء فرق افتراضية ببيانات تفصيلية
+                t1 = Team(
+                    name=f"فرقة بحث {d_data['sh']} - أ", 
+                    short_name=f"{d_data['sh']}-A", 
+                    head_name="د. رئيس الفرقة أ", 
+                    department_id=dept.id,
+                    description="تهتم هذه الفرقة بدراسة القضايا المعاصرة وتحليلها وفق المناهج الحديثة.",
+                    thematic_class="فلسفة واجتماع",
+                    domains="العلوم الإنسانية، الدراسات البينية",
+                    keywords="مجتمع، ثقافة، نقد، تحليل",
+                    program_desc="برنامج يهدف لتعزيز البحث الميداني وتطوير أدوات التحليل السوسيولوجي."
+                )
+                session.add(t1)
                 session.commit()
             
+            # حساب رئيس القسم
             if not session.query(User).filter_by(username=d_data["user"]).first():
                 session.add(User(
                     username=d_data["user"], full_name=d_data["head"], password_hash=pw_hash,
@@ -147,6 +173,7 @@ def auto_init_system():
                 ))
                 session.commit()
 
+        # حساب المدير
         if not session.query(User).filter_by(username="admin").first():
             session.add(User(username="admin", full_name="المدير العام", password_hash=pw_hash, role="admin", member_type="admin"))
             session.commit()
@@ -179,12 +206,12 @@ def register_user_secure(u, f, p, role, code, t_id, d_id):
         s.rollback(); return False, f"خطأ: {str(e)}"
     finally: s.close()
 
-def add_user_manual(u, f, p, role, t_id, d_id):
+def add_user_manual(u, f, p, role, t_id, d_id, m_type="permanent"):
     s = SessionLocal()
     try:
         if s.query(User).filter(User.username == u).first(): return False, "موجود مسبقاً"
         h = bcrypt.hashpw(p.encode(), bcrypt.gensalt()).decode()
-        s.add(User(username=u, full_name=f, password_hash=h, role=role, team_id=t_id, department_id=d_id, member_type="permanent"))
+        s.add(User(username=u, full_name=f, password_hash=h, role=role, team_id=t_id, department_id=d_id, member_type=m_type))
         s.commit()
         return True, "تمت الإضافة"
     except: s.rollback(); return False, "خطأ"
@@ -300,11 +327,13 @@ st.markdown("""
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
     
-    /* بطاقات الهيكل التنظيمي */
-    .org-card-dept { background: #fff; border: 1px solid #d1d5db; border-radius: 10px; padding: 15px; border-right: 5px solid #2563eb; margin-bottom: 15px; }
-    .org-card-team { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; border-right: 4px solid #10b981; margin-bottom: 10px; margin-right: 20px; }
-    .org-label { font-size: 12px; color: #64748b; font-weight: bold; }
-    .org-val { font-size: 14px; color: #1e293b; font-weight: 600; margin-bottom: 5px; }
+    /* بطاقات الهيكل التنظيمي المتقدمة */
+    .org-card-dept { background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 20px; border-right: 6px solid #1e40af; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .org-card-team { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 15px; border-right: 5px solid #10b981; margin-bottom: 15px; margin-top: 10px; }
+    .info-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 5px 0; font-size: 13px; }
+    .info-label { font-weight: bold; color: #64748b; }
+    .info-val { color: #1e293b; font-weight: 600; }
+    .member-list { margin-top: 10px; padding: 10px; background: #fff; border-radius: 8px; border: 1px solid #f1f5f9; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -471,65 +500,93 @@ else:
                 st.markdown('</div>', unsafe_allow_html=True)
         else: st.info("لا توجد بيانات متاحة لعرضها.")
 
-    # --- 2. الهيكل التنظيمي (المنطق الهرمي المتقدم) ---
+    # --- 2. الهيكل التنظيمي (النسخة المفصلة) ---
     elif selection == "الهيكل التنظيمي":
-        st.title("🏢 الهيكل التنظيمي للمركز")
+        st.title("🏢 الهيكل التنظيمي (التفصيلي)")
         session = SessionLocal()
         
-        # دالة مساعدة لرسم بطاقة القسم
+        # دالة مساعدة لرسم بطاقة القسم الكاملة
         def draw_dept_card(d):
             st.markdown(f"""
             <div class="org-card-dept">
-                <div style="font-size:18px; color:#1e3a8a; font-weight:bold;">📂 {d.name_ar}</div>
-                <div class="org-label">الاسم اللاتيني: <span class="org-val">{d.name_la or '-'}</span></div>
-                <div class="org-label">المختصر: <span class="org-val">{d.short_name or '-'}</span> | الرقم: <span class="org-val">#{d.id}</span></div>
-                <div class="org-label">رئيس القسم: <span class="org-val" style="color:#b91c1c;">{d.head_name or 'غير محدد'}</span></div>
+                <div style="font-size:20px; color:#1e3a8a; font-weight:bold; margin-bottom:10px;">📂 {d.name_ar}</div>
+                <div class="info-row"><span class="info-label">الرقم:</span> <span class="info-val">{d.id}</span></div>
+                <div class="info-row"><span class="info-label">الاسم باللاتينية:</span> <span class="info-val">{d.name_la or '-'}</span></div>
+                <div class="info-row"><span class="info-label">الاسم المختصر:</span> <span class="info-val">{d.short_name or '-'}</span></div>
+                <div class="info-row"><span class="info-label">رئيس القسم:</span> <span class="info-val" style="color:#b91c1c;">{d.head_name or '-'}</span></div>
             </div>
             """, unsafe_allow_html=True)
 
-        # دالة مساعدة لرسم بطاقة الفرقة
+        # دالة مساعدة لرسم بطاقة الفرقة الكاملة مع القوائم
         def draw_team_card(t):
-            st.markdown(f"""
-            <div class="org-card-team">
-                <div style="font-size:16px; color:#059669; font-weight:bold;">🧬 {t.name}</div>
-                <div class="org-label">المختصر: <span class="org-val">{t.short_name or '-'}</span> | الرقم: <span class="org-val">#{t.id}</span></div>
-                <div class="org-label">رئيس الفرقة: <span class="org-val" style="color:#b91c1c;">{t.head_name or 'غير محدد'}</span></div>
-            </div>
-            """, unsafe_allow_html=True)
+            with st.expander(f"🧬 {t.name} (التفاصيل والأعضاء)", expanded=False):
+                st.markdown(f"""
+                <div class="org-card-team">
+                    <div style="font-size:18px; color:#059669; font-weight:bold; margin-bottom:10px;">{t.name}</div>
+                    <div class="info-row"><span class="info-label">رقم الفرقة:</span> <span class="info-val">{t.id}</span></div>
+                    <div class="info-row"><span class="info-label">الاسم المختصر:</span> <span class="info-val">{t.short_name or '-'}</span></div>
+                    <div class="info-row"><span class="info-label">رئيس الفرقة:</span> <span class="info-val" style="color:#b91c1c;">{t.head_name or '-'}</span></div>
+                    <div class="info-row"><span class="info-label">التصنيف الموضوعاتي:</span> <span class="info-val">{t.thematic_class or '-'}</span></div>
+                    <div class="info-row"><span class="info-label">الميادين:</span> <span class="info-val">{t.domains or '-'}</span></div>
+                    <div class="info-row"><span class="info-label">الكلمات المفتاحية:</span> <span class="info-val">{t.keywords or '-'}</span></div>
+                    <div style="margin-top:10px;">
+                        <span class="info-label">التعريف بالفرقة:</span><br>
+                        <p style="font-size:13px; color:#334155;">{t.description or 'لا يوجد وصف'}</p>
+                    </div>
+                    <div style="margin-top:5px;">
+                        <span class="info-label">وصف برنامج البحث:</span><br>
+                        <p style="font-size:13px; color:#334155;">{t.program_desc or 'لا يوجد وصف'}</p>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # تصنيف الأعضاء
+                perm = [m for m in t.members if m.member_type == 'permanent' or m.role == 'leader']
+                phd = [m for m in t.members if m.member_type == 'phd_student']
+                att = [m for m in t.members if m.member_type == 'attach']
+                assoc = [m for m in t.members if m.member_type == 'associate']
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown('<div class="member-list"><b>👨‍🏫 الأعضاء الدائمون (ورئيس الفرقة):</b>', unsafe_allow_html=True)
+                    for m in perm: st.write(f"- {m.full_name}")
+                    
+                    st.markdown('<div class="member-list"><b>🎓 طلبة الدكتوراه:</b>', unsafe_allow_html=True)
+                    for m in phd: st.write(f"- {m.full_name}")
+                
+                with c2:
+                    st.markdown('<div class="member-list"><b>🔬 ملحقو البحث:</b>', unsafe_allow_html=True)
+                    for m in att: st.write(f"- {m.full_name}")
+                    
+                    st.markdown('<div class="member-list"><b>🤝 الأعضاء المشاركون:</b>', unsafe_allow_html=True)
+                    for m in assoc: st.write(f"- {m.full_name}")
 
-        # 👑 المدير العام: يرى كل شيء
+        # المنطق الهرمي للعرض
         if user.role == 'admin':
-            depts = session.query(Department).options(joinedload(Department.teams)).all()
+            depts = session.query(Department).options(joinedload(Department.teams).joinedload(Team.members)).all()
             for d in depts:
-                with st.expander(f"{d.name_ar}", expanded=False):
-                    draw_dept_card(d)
-                    st.markdown("---")
-                    st.markdown("###### 🔽 الفرق البحثية:")
-                    if d.teams:
-                        for t in d.teams:
-                            draw_team_card(t)
-                    else: st.info("لا توجد فرق.")
+                draw_dept_card(d)
+                if d.teams:
+                    st.markdown("###### 🔻 الفرق التابعة:")
+                    for t in d.teams: draw_team_card(t)
+                st.markdown("---")
 
-        # 🎓 رئيس القسم: يرى قسمه وفرقه فقط
         elif user.role == 'dept_head':
             if user.department_id:
-                d = session.query(Department).options(joinedload(Department.teams)).filter(Department.id == user.department_id).first()
+                d = session.query(Department).options(joinedload(Department.teams).joinedload(Team.members)).filter(Department.id == user.department_id).first()
                 if d:
                     draw_dept_card(d)
-                    st.markdown("### 🔽 الفرق التابعة للقسم:")
-                    for t in d.teams:
-                        draw_team_card(t)
-            else: st.warning("لم يتم ربطك بأي قسم.")
+                    st.markdown("###### 🔻 الفرق التابعة:")
+                    for t in d.teams: draw_team_card(t)
+            else: st.warning("غير مرتبط بقسم")
 
-        # 🔬 رئيس الفرقة / الباحث: يرى فرقته فقط
         elif user.role in ['leader', 'researcher']:
             if user.team_id:
-                t = session.query(Team).options(joinedload(Team.department)).filter(Team.id == user.team_id).first()
+                t = session.query(Team).options(joinedload(Team.members)).filter(Team.id == user.team_id).first()
                 if t:
-                    if t.department:
-                        st.markdown(f"**تابع لقسم:** {t.department.name_ar}")
+                    st.info(f"تابع لقسم: {t.department.name_ar if t.department else '-'}")
                     draw_team_card(t)
-            else: st.warning("لم يتم ربطك بأي فرقة.")
+            else: st.warning("غير مرتبط بفرقة")
             
         session.close()
 
@@ -623,6 +680,11 @@ else:
         c3, c4 = st.columns(2)
         pas = c3.text_input("كلمة المرور", type="password")
         role = c4.selectbox("الصفة", ["رئيس قسم", "رئيس فرقة", "باحث"])
+        
+        m_type = "permanent"
+        if role == "باحث":
+            m_type = st.selectbox("نوع العضوية", list(MEMBER_TYPES.keys()), format_func=lambda x: MEMBER_TYPES[x])
+        
         session = SessionLocal()
         depts = session.query(Department).all()
         d_map = {d.name_ar: d.id for d in depts}
@@ -641,7 +703,7 @@ else:
         session.close()
         if st.button("إضافة المستخدم", type="primary", use_container_width=True):
             r_code = "dept_head" if role == "رئيس قسم" else ("leader" if role == "رئيس فرقة" else "researcher")
-            if add_user_manual(uname, name, pas, r_code, sel_t_id, sel_d_id):
+            if add_user_manual(uname, name, pas, r_code, sel_t_id, sel_d_id, m_type):
                 st.success("تمت الإضافة بنجاح")
             else: st.error("خطأ: اسم المستخدم موجود مسبقاً")
 
