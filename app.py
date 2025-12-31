@@ -582,12 +582,20 @@ else:
                 m_aff = [m for m in t.members if m.member_type == 'affiliate']
                 m_assoc = [m for m in t.members if m.member_type == 'associate']
                 
-                # --- فرز الأعضاء أبجدياً ---
-                m_perm.sort(key=lambda x: x.full_name)
-                m_phd.sort(key=lambda x: x.full_name)
-                m_aff.sort(key=lambda x: x.full_name)
-                m_assoc.sort(key=lambda x: x.full_name)
-                
+                # --- منطق الترتيب: أ.د > د. > ط > الباقي ---
+                def get_rank(member):
+                    name = member.full_name.strip() if member.full_name else ""
+                    if name.startswith("أ.د"): return 1
+                    if name.startswith("د."): return 2
+                    if name.startswith("ط"): return 3
+                    return 4
+
+                m_perm.sort(key=lambda x: (get_rank(x), x.full_name))
+                m_phd.sort(key=lambda x: (get_rank(x), x.full_name))
+                m_aff.sort(key=lambda x: (get_rank(x), x.full_name))
+                m_assoc.sort(key=lambda x: (get_rank(x), x.full_name))
+                # ---------------------------------------------
+
                 c1, c2, c3, c4 = st.columns(4)
                 
                 def list_members(title, members, icon):
