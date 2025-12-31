@@ -537,28 +537,45 @@ else:
         st.title("🏢 الهيكل التنظيمي (التفصيلي)")
         session = SessionLocal()
         
+        # دالة عرض تفاصيل الفرقة (محدثة للمحاذاة يمين)
         def show_team_details(t):
-            st.markdown(f'<div class="team-header" style="background:#e0f2fe; border-right:5px solid #0284c7;">🧬 <b>{t.name}</b></div>', unsafe_allow_html=True)
+            # 1. عنوان الفرقة (Header)
+            st.markdown(f"""
+            <div class="team-header" style="background:#e0f2fe; border-right:5px solid #0284c7; text-align: right; direction: rtl;">
+                🧬 <b>{t.name}</b>
+            </div>
+            """, unsafe_allow_html=True)
+            
             tab_info, tab_prog, tab_members = st.tabs(["📋 بطاقة الفرقة", "🔬 البرنامج العلمي", "👥 القوائم الاسمية"])
             
+            # 2. تبويب المعلومات
             with tab_info:
                 c_a, c_b = st.columns(2)
+                
+                # دالة مساعدة صغيرة لتنسيق الحقول يمين
+                def field(label, value):
+                    return f'<div style="text-align: right; direction: rtl; margin-bottom: 5px;"><b>{label}:</b> {value}</div>'
+
                 with c_a:
-                    st.markdown(f"**رقم الفرقة:** {t.id}")
-                    st.markdown(f"**الاسم بالعربية:** {t.name}")
-                    st.markdown(f"**الاسم بالإنجليزية:** {t.name_en or '-'}")
-                    st.markdown(f"**المختصر:** {t.short_name or '-'}")
+                    st.markdown(field("رقم الفرقة", t.id), unsafe_allow_html=True)
+                    st.markdown(field("الاسم بالعربية", t.name), unsafe_allow_html=True)
+                    st.markdown(field("الاسم بالإنجليزية", t.name_en or '-'), unsafe_allow_html=True)
+                    st.markdown(field("المختصر", t.short_name or '-'), unsafe_allow_html=True)
+                
                 with c_b:
-                    st.markdown(f"**رئيس الفرقة:** {t.head_name or '-'}")
-                    st.markdown(f"**التصنيف:** {t.classification or '-'}")
-                    st.markdown(f"**الميادين:** {t.domains or '-'}")
-                    st.markdown(f"**الكلمات المفتاحية:** {t.keywords or '-'}")
+                    st.markdown(field("رئيس الفرقة", t.head_name or '-'), unsafe_allow_html=True)
+                    st.markdown(field("التصنيف", t.classification or '-'), unsafe_allow_html=True)
+                    st.markdown(field("الميادين", t.domains or '-'), unsafe_allow_html=True)
+                    st.markdown(field("الكلمات المفتاحية", t.keywords or '-'), unsafe_allow_html=True)
+                
                 st.markdown("---")
-                st.markdown(f"**التعريف بالفرقة:**\n{t.description or 'لا يوجد وصف'}")
+                st.markdown(f'<div style="text-align: right; direction: rtl;"><b>التعريف بالفرقة:</b><br>{t.description or "لا يوجد وصف"}</div>', unsafe_allow_html=True)
 
+            # 3. تبويب البرنامج العلمي
             with tab_prog:
-                st.info(t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد.")
+                st.markdown(f'<div style="text-align: right; direction: rtl; background-color: #e0f7fa; padding: 10px; border-radius: 5px;">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
 
+            # 4. تبويب الأعضاء
             with tab_members:
                 m_perm = [m for m in t.members if m.member_type == 'permanent']
                 m_phd = [m for m in t.members if m.member_type == 'phd_student']
@@ -566,27 +583,23 @@ else:
                 m_assoc = [m for m in t.members if m.member_type == 'associate']
                 
                 c1, c2, c3, c4 = st.columns(4)
-                with c1:
-                    st.markdown("###### 🏛️ الدائمون")
-                    if m_perm:
-                        for m in m_perm: st.write(f"- {m.full_name}")
-                    else: st.caption("فارغ")
-                with c2:
-                    st.markdown("###### 🎓 طلبة الدكتوراه")
-                    if m_phd:
-                        for m in m_phd: st.write(f"- {m.full_name}")
-                    else: st.caption("فارغ")
-                with c3:
-                    st.markdown("###### 🤝 ملحق بحث")
-                    if m_aff:
-                        for m in m_aff: st.write(f"- {m.full_name}")
-                    else: st.caption("فارغ")
-                with c4:
-                    st.markdown("###### 🌍 عضو مشارك")
-                    if m_assoc:
-                        for m in m_assoc: st.write(f"- {m.full_name}")
-                    else: st.caption("فارغ")
+                
+                # دالة مساعدة لعرض القوائم يمين
+                def list_members(title, members, icon):
+                    html = f'<div style="text-align: right; direction: rtl;"><h6 style="color:#1e3a8a;">{icon} {title}</h6>'
+                    if members:
+                        for m in members:
+                            html += f'<div style="margin-right: 10px;">- {m.full_name}</div>'
+                    else:
+                        html += '<div style="color: gray; margin-right: 10px;">فارغ</div>'
+                    html += '</div>'
+                    st.markdown(html, unsafe_allow_html=True)
 
+                with c1: list_members("الدائمون", m_perm, "🏛️")
+                with c2: list_members("طلبة الدكتوراه", m_phd, "🎓")
+                with c3: list_members("ملحق بحث", m_aff, "🤝")
+                with c4: list_members("عضو مشارك", m_assoc, "🌍")
+                    
         def show_dept_details(d):
             st.markdown(f"""
             <div class="dept-card" style="text-align: center; direction: rtl;">
@@ -764,5 +777,6 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
 
 
