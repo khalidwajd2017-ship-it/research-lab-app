@@ -303,7 +303,7 @@ def to_excel(df):
     except: return None
 
 # ==========================================
-# 4. التنسيق (CSS) - تم تحديث المحاذاة
+# 4. التنسيق (CSS) - المحاذاة القسرية
 # ==========================================
 st.markdown("""
 <style>
@@ -313,6 +313,7 @@ st.markdown("""
     h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
     .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
+    
     .kpi-container { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; border-right: 4px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; transition: transform 0.2s; }
     .kpi-container:hover { transform: translateY(-3px); }
     .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
@@ -333,8 +334,8 @@ st.markdown("""
         background: #fff;
     }
     [data-testid="stExpander"] summary {
-        flex-direction: row-reverse !important; /* وضع السهم على اليمين والنص على اليسار */
-        justify-content: flex-end !important; /* محاذاة المحتوى لليمين */
+        flex-direction: row-reverse !important;
+        justify-content: flex-end !important;
         text-align: right !important;
         font-family: 'Cairo', sans-serif !important;
         font-weight: 700;
@@ -344,13 +345,12 @@ st.markdown("""
     [data-testid="stExpander"] summary p {
         text-align: right !important;
         margin: 0 !important;
-        padding-right: 10px !important; /* مسافة بين السهم والنص */
+        padding-right: 10px !important;
     }
     [data-testid="stExpander"] summary:hover {
         background-color: #f8fafc;
         color: #2563eb !important;
     }
-    /* محاذاة المحتوى الداخلي للقائمة */
     [data-testid="stExpander"] > div {
          direction: rtl !important;
          text-align: right !important;
@@ -486,7 +486,6 @@ else:
                 max_date = df['publication_date'].max()
                 d_from = col_d1.date_input("من تاريخ", min_date)
                 d_to = col_d2.date_input("إلى تاريخ", max_date)
-                
                 c1, c2, c3 = st.columns(3)
                 depts = sorted(df['department'].unique().tolist())
                 sel_dept = c1.selectbox("القسم", ["الكل"] + depts)
@@ -590,7 +589,7 @@ else:
 
         def show_dept_details(d):
             st.markdown(f"""
-            <div class="dept-card" style="text-align: right; direction: rtl;">
+            <div class="dept-card">
                 <div class="dept-title">📂 {d.name_ar}</div>
                 <div class="dept-info"><b>اللاتينية:</b> {d.name_la or '-'} | <b>المختصر:</b> {d.short_name or '-'} | <b>الرقم:</b> {d.id}</div>
                 <div class="dept-info" style="color:#b91c1c;"><b>رئيس القسم:</b> {d.head_name or '-'}</div>
@@ -598,7 +597,7 @@ else:
             """, unsafe_allow_html=True)
 
         if user.role == 'admin':
-            depts = session.query(Department).options(joinedload(Department.teams).joinedload(Team.members)).all()
+            depts = session.query(Department).options(joinedload(Department.teams).joinedload(Team.members)).order_by(Department.id).all()
             for d in depts:
                 with st.expander(f"{d.name_ar}", expanded=False):
                     show_dept_details(d)
@@ -765,4 +764,3 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
-
