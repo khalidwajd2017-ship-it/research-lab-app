@@ -76,14 +76,14 @@ class Team(Base):
     __tablename__ = "teams"
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    name_en = Column(String)        # إسم الفرقة بالإنجليزية
-    short_name = Column(String)     # الإسم المختصر
-    head_name = Column(String)      # رئيس الفرقة (للعرض النصي)
-    description = Column(Text)      # التعريف بالفرقة
-    classification = Column(String) # التصنيف الموضوعاتي
-    domains = Column(String)        # الميادين
-    keywords = Column(String)       # الكلمات المفتاحية
-    program_desc = Column(Text)     # وصف علمي لبرنامج البحث
+    name_en = Column(String)
+    short_name = Column(String)
+    head_name = Column(String)
+    description = Column(Text)
+    classification = Column(String)
+    domains = Column(String)
+    keywords = Column(String)
+    program_desc = Column(Text)
     
     department_id = Column(Integer, ForeignKey("departments.id"))
     department = relationship("Department", back_populates="teams")
@@ -96,7 +96,7 @@ class User(Base):
     full_name = Column(String)
     password_hash = Column(String)
     role = Column(String) 
-    member_type = Column(String) # permanent, phd_student, affiliate, associate
+    member_type = Column(String)
     team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
     team = relationship("Team", back_populates="members")
     department_id = Column(Integer, ForeignKey("departments.id"), nullable=True)
@@ -127,7 +127,6 @@ def auto_init_system():
         
         session = SessionLocal()
         
-        # بيانات الأقسام
         departments_data = [
             {"id": 1, "ar": "الدراسات الفلسفية النظرية", "la": "Theoretical Philosophical Studies", "sh": "TPS", "head": "أ.د. عبد اللاوي عبد الله", "user": "head_tps"},
             {"id": 2, "ar": "الدراسات الفلسفية التطبيقية", "la": "Applied Philosophical Studies", "sh": "APS", "head": "أ.د. دراس شهر زاد", "user": "head_aps"},
@@ -149,7 +148,6 @@ def auto_init_system():
                 session.add(dept)
                 session.flush()
                 
-                # إنشاء فرق افتراضية ببيانات كاملة وغنية
                 t1 = Team(
                     name=f"فرقة بحث {d_data['sh']} - النموذجية",
                     name_en=f"Research Team {d_data['sh']} - Standard",
@@ -165,7 +163,6 @@ def auto_init_system():
                 session.add(t1)
                 session.commit()
             
-            # إنشاء حساب رئيس القسم
             if not session.query(User).filter_by(username=d_data["user"]).first():
                 session.add(User(
                     username=d_data["user"], full_name=d_data["head"], password_hash=pw_hash,
@@ -306,24 +303,71 @@ def to_excel(df):
     except: return None
 
 # ==========================================
-# 4. التنسيق (CSS)
+# 4. التنسيق (CSS) - المحاذاة القسرية
 # ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
-    :root { --primary: #2563eb; --bg: #f8fafc; }
-    html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; background-color: #fcfcfc; text-align: right; }
-    h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; color: #1e3a8a; text-align: right !important; }
-    [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
     
+    /* Global RTL Settings */
+    html, body, .stApp { 
+        font-family: 'Tajawal', sans-serif !important; 
+        direction: rtl !important; 
+        text-align: right !important;
+        background-color: #fcfcfc;
+    }
+    
+    h1, h2, h3, h4, h5 { font-family: 'Cairo' !important; font-weight: 800; color: #1e3a8a; }
+    
+    /* Sidebar */
+    [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
+    
+    /* Inputs & Forms */
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { 
+        text-align: right !important; 
+        direction: rtl !important; 
+        border-radius: 8px; 
+    }
+    
+    /* Force Right Alignment for Expander Headers and Content */
+    [data-testid="stExpander"] {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
+    [data-testid="stExpander"] details {
+        text-align: right !important;
+    }
+    
+    [data-testid="stExpander"] summary {
+        flex-direction: row-reverse !important; /* Move arrow to left */
+        justify-content: flex-end !important; /* Content to right */
+        text-align: right !important;
+        padding-right: 10px;
+    }
+    
+    [data-testid="stExpander"] summary p {
+        text-align: right !important;
+        width: 100%;
+        margin: 0;
+    }
+    
+    /* Cards Styles */
     .dept-card { background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; margin-bottom: 15px; border-right: 5px solid #2563eb; }
     .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
     .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
     
-    .team-header { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid #10b981; margin-bottom: 10px; }
-    .field-label { font-weight: bold; color: #1f2937; display: block; margin-bottom: 2px; }
-    .field-val { color: #4b5563; margin-bottom: 10px; display: block; font-size: 14px; }
+    .team-header { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
+    
+    /* Tabs Alignment */
+    .stTabs [data-baseweb="tab-list"] {
+        justify-content: flex-end;
+        flex-direction: row;
+    }
+    .stTabs [data-baseweb="tab"] {
+        font-family: 'Cairo';
+        direction: rtl;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -369,7 +413,6 @@ if not st.session_state['logged_in']:
             new_pass = c_pass.text_input("كلمة المرور", type="password")
             role_key = c_role.selectbox("الصفة", list(ACTIVATION_CODES.keys()))
             
-            # نوع العضوية
             m_type_key = "permanent"
             if role_key in ['leader', 'researcher']:
                 m_type_key = st.selectbox("نوع العضوية", list(MEMBER_TYPES.keys()), format_func=lambda x: MEMBER_TYPES[x])
@@ -446,7 +489,6 @@ else:
                 max_date = df['publication_date'].max()
                 d_from = col_d1.date_input("من تاريخ", min_date)
                 d_to = col_d2.date_input("إلى تاريخ", max_date)
-                
                 c1, c2, c3 = st.columns(3)
                 depts = sorted(df['department'].unique().tolist())
                 sel_dept = c1.selectbox("القسم", ["الكل"] + depts)
@@ -493,15 +535,13 @@ else:
                 st.markdown('</div>', unsafe_allow_html=True)
         else: st.info("لا توجد بيانات متاحة لعرضها.")
 
-    # --- 2. الهيكل التنظيمي (المفصل والدقيق) ---
+    # --- 2. الهيكل التنظيمي ---
     elif selection == "الهيكل التنظيمي":
         st.title("🏢 الهيكل التنظيمي (التفصيلي)")
         session = SessionLocal()
         
-        # دالة عرض تفاصيل الفرقة
         def show_team_details(t):
             st.markdown(f'<div class="team-header" style="background:#e0f2fe; border-right:5px solid #0284c7;">🧬 <b>{t.name}</b></div>', unsafe_allow_html=True)
-            
             tab_info, tab_prog, tab_members = st.tabs(["📋 بطاقة الفرقة", "🔬 البرنامج العلمي", "👥 القوائم الاسمية"])
             
             with tab_info:
@@ -516,7 +556,6 @@ else:
                     st.markdown(f"**التصنيف:** {t.classification or '-'}")
                     st.markdown(f"**الميادين:** {t.domains or '-'}")
                     st.markdown(f"**الكلمات المفتاحية:** {t.keywords or '-'}")
-                
                 st.markdown("---")
                 st.markdown(f"**التعريف بالفرقة:**\n{t.description or 'لا يوجد وصف'}")
 
@@ -524,7 +563,6 @@ else:
                 st.info(t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد.")
 
             with tab_members:
-                # تصنيف الأعضاء
                 m_perm = [m for m in t.members if m.member_type == 'permanent']
                 m_phd = [m for m in t.members if m.member_type == 'phd_student']
                 m_aff = [m for m in t.members if m.member_type == 'affiliate']
@@ -536,26 +574,22 @@ else:
                     if m_perm:
                         for m in m_perm: st.write(f"- {m.full_name}")
                     else: st.caption("فارغ")
-                
                 with c2:
                     st.markdown("###### 🎓 طلبة الدكتوراه")
                     if m_phd:
                         for m in m_phd: st.write(f"- {m.full_name}")
                     else: st.caption("فارغ")
-                
                 with c3:
                     st.markdown("###### 🤝 ملحق بحث")
                     if m_aff:
                         for m in m_aff: st.write(f"- {m.full_name}")
                     else: st.caption("فارغ")
-                
                 with c4:
                     st.markdown("###### 🌍 عضو مشارك")
                     if m_assoc:
                         for m in m_assoc: st.write(f"- {m.full_name}")
                     else: st.caption("فارغ")
 
-        # دالة عرض القسم
         def show_dept_details(d):
             st.markdown(f"""
             <div class="dept-card">
@@ -565,7 +599,6 @@ else:
             </div>
             """, unsafe_allow_html=True)
 
-        # منطق العرض حسب الصلاحية
         if user.role == 'admin':
             depts = session.query(Department).options(joinedload(Department.teams).joinedload(Team.members)).all()
             for d in depts:
@@ -688,7 +721,6 @@ else:
         pas = c3.text_input("كلمة المرور", type="password")
         role = c4.selectbox("الصفة", ["رئيس قسم", "رئيس فرقة", "باحث"])
         
-        # نوع العضوية
         m_type = "permanent"
         if role in ["رئيس فرقة", "باحث"]:
             m_type = st.selectbox("نوع العضوية", list(MEMBER_TYPES.keys()), format_func=lambda x: MEMBER_TYPES[x])
