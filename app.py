@@ -10,6 +10,7 @@ import json
 import base64
 import os
 import io
+from streamlit_option_menu import option_menu  # مكتبة القائمة الجانبية الاحترافية
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -310,38 +311,9 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
     
-    /* الأساسيات */
     html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
     h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; text-align: right !important; }
     
-    /* تحسين القائمة الجانبية (شكل أزرار حديثة بدلاً من دوائر) */
-    section[data-testid="stSidebar"] .stRadio > label { display: none; }
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label {
-        background: transparent;
-        padding: 10px 15px;
-        border-radius: 8px;
-        margin-bottom: 5px;
-        cursor: pointer;
-        transition: all 0.3s;
-        border: 1px solid transparent;
-        width: 100%;
-        display: flex;
-        justify-content: flex-end;
-        font-family: 'Cairo';
-        font-weight: 600;
-    }
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:hover {
-        background: rgba(37, 99, 235, 0.1);
-        color: #2563eb;
-    }
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label[data-checked="true"] {
-        background: #2563eb;
-        color: white;
-        box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
-    }
-    /* إخفاء دائرة الراديو */
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { display: none; }
-
     /* تحسين البطاقات (KPIs) */
     .kpi-container {
         background-color: var(--background-color); 
@@ -371,17 +343,49 @@ st.markdown("""
     }
 
     /* الأزرار */
-    .stButton>button { width: 100%; border-radius: 10px; font-family: 'Cairo'; font-weight: bold; height: 45px; transition: all 0.3s; }
+    .stButton>button { 
+        width: 100%; 
+        border-radius: 10px; 
+        font-family: 'Cairo'; 
+        font-weight: bold; 
+        height: 45px; 
+        transition: all 0.3s;
+    }
 
     /* النماذج */
-    [data-testid="stForm"] { background: var(--secondary-background-color); padding: 25px; border-radius: 16px; border: 1px solid rgba(0,0,0,0.05); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    [data-testid="stForm"] { 
+        background: var(--secondary-background-color); 
+        padding: 25px; 
+        border-radius: 16px; 
+        border: 1px solid rgba(0,0,0,0.05); 
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
+    }
 
     /* التبويبات */
-    [data-testid="stTabs"] button { font-family: 'Cairo' !important; font-weight: 700 !important; font-size: 16px !important; border-radius: 8px 8px 0 0 !important; }
+    [data-testid="stTabs"] button {
+        font-family: 'Cairo' !important;
+        font-weight: 700 !important;
+        font-size: 16px !important;
+        border-radius: 8px 8px 0 0 !important;
+    }
 
     /* القوائم المنسدلة (Expanders) */
-    [data-testid="stExpander"] { direction: rtl !important; text-align: right !important; border: 1px solid rgba(0,0,0,0.1); border-radius: 10px; margin-bottom: 10px; background: var(--secondary-background-color); }
-    [data-testid="stExpander"] summary { flex-direction: row-reverse !important; justify-content: flex-end !important; text-align: right !important; font-family: 'Cairo', sans-serif !important; font-weight: 700; padding: 12px !important; }
+    [data-testid="stExpander"] { 
+        direction: rtl !important; 
+        text-align: right !important; 
+        border: 1px solid rgba(0,0,0,0.1); 
+        border-radius: 10px; 
+        margin-bottom: 10px; 
+        background: var(--secondary-background-color); 
+    }
+    [data-testid="stExpander"] summary { 
+        flex-direction: row-reverse !important; 
+        justify-content: flex-end !important; 
+        text-align: right !important; 
+        font-family: 'Cairo', sans-serif !important; 
+        font-weight: 700; 
+        padding: 12px !important; 
+    }
     [data-testid="stExpander"] summary p { margin: 0 !important; padding-right: 10px !important; }
     [data-testid="stExpander"] > div { direction: rtl !important; text-align: right !important; padding: 15px !important; border-top: 1px solid rgba(0,0,0,0.05); }
 
@@ -393,7 +397,6 @@ st.markdown("""
     /* بطاقات الهيكل */
     .dept-card { background: var(--secondary-background-color); padding: 20px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.1); margin-bottom: 15px; border-right: 6px solid #2563eb; }
     .team-header { background: rgba(37, 99, 235, 0.05); padding: 15px; border-radius: 10px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
-    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -490,26 +493,35 @@ else:
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown(f"<div style='text-align: center; margin-bottom: 20px; font-weight: bold; opacity: 0.7;'>مرحباً بك: {user.full_name} 👋</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center; margin-bottom: 20px; font-weight: bold; color: gray;'>مرحباً بك: {user.full_name} 👋</div>", unsafe_allow_html=True)
         
-        # --- القائمة الجانبية (محسنة بالـ CSS) ---
-        menu = {
-            "لوحة القيادة": "📊 لوحة القيادة",
-            "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
-            "إدارة الأنشطة": "🗂️ إدارة الأنشطة",
-            "الإعدادات": "⚙️ الإعدادات"
-        }
+        # --- القائمة الجانبية الاحترافية ---
+        menu_options = ["لوحة القيادة", "الهيكل التنظيمي", "إدارة الأنشطة", "الإعدادات"]
+        menu_icons = ["bar-chart-fill", "diagram-3-fill", "kanban", "gear-fill"]
         
         if user.role in ['leader', 'researcher']:
-            menu["تسجيل نتاج"] = "📝 تسجيل نتاج جديد"
-            menu["أعمالي"] = "📂 سجل أعمالي"
+            menu_options.insert(2, "تسجيل نتاج")
+            menu_icons.insert(2, "pencil-square")
+            menu_options.insert(3, "أعمالي")
+            menu_icons.insert(3, "folder-fill")
             
         if user.role == 'admin': 
-            menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
-        
-        # استخدام radio عادي لكن الـ CSS سيحوله لأزرار
-        sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
-        selection = [k for k, v in menu.items() if v == sel][0]
+            menu_options.insert(3, "إدارة المستخدمين")
+            menu_icons.insert(3, "people-fill")
+
+        selection = option_menu(
+            menu_title=None,
+            options=menu_options,
+            icons=menu_icons,
+            menu_icon="cast",
+            default_index=0,
+            styles={
+                "container": {"padding": "0!important", "background-color": "transparent"},
+                "icon": {"color": "orange", "font-size": "18px"}, 
+                "nav-link": {"font-size": "16px", "text-align": "right", "margin":"5px", "--hover-color": "#eee", "font-family": "Cairo"},
+                "nav-link-selected": {"background-color": "#2563eb"},
+            }
+        )
         
         st.markdown("---")
         if st.button("تسجيل الخروج", type="secondary"):
@@ -721,66 +733,62 @@ else:
     # --- 3. تسجيل نتاج ---
     elif selection == "تسجيل نتاج":
         st.title("📝 تسجيل نتاج علمي جديد")
-        
-        if user.role in ['admin', 'dept_head']:
-            st.error("⚠️ عذراً، لا يمكنك تسجيل نتاج علمي بهذه الصفة.")
-        else:
-            st.markdown('<div class="rtl-header">📌 اختر نوع النشاط لتخصيص الحقول:</div>', unsafe_allow_html=True)
-            w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
-            st.markdown("---")
-            st.markdown(f'<div class="rtl-header">📄 تفاصيل: {w_type}</div>', unsafe_allow_html=True)
-            if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
-            with st.form(key=f"w_form_{st.session_state['fid']}"):
-                c1, c2 = st.columns([3, 1])
-                title = c1.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
-                date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
-                lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
-                details = {"lang": lang}
-                pts, cls = 10, "غير مصنف"
-                if w_type == "مقال في مجلة علمية":
-                    c1, c2 = st.columns(2)
-                    j = c1.text_input("اسم المجلة *")
-                    issn = c2.text_input("ISSN")
-                    cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"])
-                    idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"])
-                    details.update({"journal": j, "issn": issn, "indexing": idx})
-                    pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
-                elif w_type == "مداخلة في مؤتمر":
-                    c1, c2 = st.columns(2)
-                    conf = c1.text_input("اسم الملتقى *")
-                    org = c2.text_input("الجهة المنظمة")
-                    scope = st.selectbox("النطاق", ["وطني", "دولي"])
-                    details.update({"conf": conf, "organizer": org, "scope": scope})
-                    pts = 50 if scope == "دولي" else 25
-                elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
-                    c1, c2 = st.columns(2)
-                    pub = c1.text_input("دار النشر *")
-                    isbn = c2.text_input("ISBN")
-                    details.update({"publisher": pub, "isbn": isbn})
-                    pts = 80 if w_type == "تأليف كتاب" else 40
-                elif w_type == "تأطير مذكرة":
-                    c1, c2 = st.columns(2)
-                    stud = c1.text_input("اسم الطالب")
-                    lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"])
-                    details.update({"student": stud, "level": lvl})
-                    pts = 20
-                elif w_type == "مشروع بحث":
-                    c1, c2 = st.columns(2)
-                    code = c1.text_input("رمز المشروع")
-                    role = c2.selectbox("الصفة", ["رئيس", "عضو"])
-                    details.update({"code": code, "role": role})
-                    pts = 60
-                elif w_type == "براءة اختراع":
-                    c1, c2 = st.columns(2)
-                    num = c1.text_input("رقم البراءة")
-                    body = c2.text_input("الهيئة المانحة")
-                    details.update({"number": num, "body": body})
-                    pts = 150
-                if st.form_submit_button("💾 حفظ البيانات", type="primary", use_container_width=True):
-                    if title:
-                        add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
-                        st.toast("✅ تم الحفظ بنجاح!", icon="🎉"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
-                    else: st.warning("يرجى إدخال عنوان العمل")
+        st.markdown('<div class="rtl-header">📌 اختر نوع النشاط لتخصيص الحقول:</div>', unsafe_allow_html=True)
+        w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
+        st.markdown("---")
+        st.markdown(f'<div class="rtl-header">📄 تفاصيل: {w_type}</div>', unsafe_allow_html=True)
+        if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
+        with st.form(key=f"w_form_{st.session_state['fid']}"):
+            c1, c2 = st.columns([3, 1])
+            title = c1.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
+            date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
+            lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
+            details = {"lang": lang}
+            pts, cls = 10, "غير مصنف"
+            if w_type == "مقال في مجلة علمية":
+                c1, c2 = st.columns(2)
+                j = c1.text_input("اسم المجلة *")
+                issn = c2.text_input("ISSN")
+                cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"])
+                idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"])
+                details.update({"journal": j, "issn": issn, "indexing": idx})
+                pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
+            elif w_type == "مداخلة في مؤتمر":
+                c1, c2 = st.columns(2)
+                conf = c1.text_input("اسم الملتقى *")
+                org = c2.text_input("الجهة المنظمة")
+                scope = st.selectbox("النطاق", ["وطني", "دولي"])
+                details.update({"conf": conf, "organizer": org, "scope": scope})
+                pts = 50 if scope == "دولي" else 25
+            elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
+                c1, c2 = st.columns(2)
+                pub = c1.text_input("دار النشر *")
+                isbn = c2.text_input("ISBN")
+                details.update({"publisher": pub, "isbn": isbn})
+                pts = 80 if w_type == "تأليف كتاب" else 40
+            elif w_type == "تأطير مذكرة":
+                c1, c2 = st.columns(2)
+                stud = c1.text_input("اسم الطالب")
+                lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"])
+                details.update({"student": stud, "level": lvl})
+                pts = 20
+            elif w_type == "مشروع بحث":
+                c1, c2 = st.columns(2)
+                code = c1.text_input("رمز المشروع")
+                role = c2.selectbox("الصفة", ["رئيس", "عضو"])
+                details.update({"code": code, "role": role})
+                pts = 60
+            elif w_type == "براءة اختراع":
+                c1, c2 = st.columns(2)
+                num = c1.text_input("رقم البراءة")
+                body = c2.text_input("الهيئة المانحة")
+                details.update({"number": num, "body": body})
+                pts = 150
+            if st.form_submit_button("💾 حفظ البيانات", type="primary", use_container_width=True):
+                if title:
+                    add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
+                    st.toast("✅ تم الحفظ بنجاح!", icon="🎉"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
+                else: st.warning("يرجى إدخال عنوان العمل")
 
     # --- 4. إدارة الأنشطة ---
     elif selection == "إدارة الأنشطة":
@@ -842,6 +850,7 @@ else:
     # --- صفحات العرض ---
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
+        
         if user.role in ['admin', 'dept_head']:
              st.error("⚠️ عذراً، لا يتوفر سجل أعمال خاص لهذه الصلاحية.")
         else:
