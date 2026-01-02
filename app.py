@@ -463,18 +463,29 @@ else:
         
         st.info(f"👤 مرحباً: {user.full_name}")
         
+        # --- بناء القائمة حسب الصلاحيات ---
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
-            "تسجيل نتاج": "📝 تسجيل نتاج جديد",
             "إدارة الأنشطة": "🗂️ إدارة الأنشطة",
             "أعمالي": "📂 سجل أعمالي",
             "الإعدادات": "⚙️ الإعدادات"
         }
-        if user.role == 'admin': menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
+        
+        # إضافة خيار "تسجيل نتاج" فقط إذا لم يكن المستخدم مديراً أو رئيس قسم
+        if user.role not in ['admin', 'dept_head']:
+            menu["تسجيل نتاج"] = "📝 تسجيل نتاج جديد"
+            
+        if user.role == 'admin': 
+            menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
             
         sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
-        selection = [k for k, v in menu.items() if v == sel][0]
+        
+        # التأكد من عدم حدوث خطأ في الاختيار
+        if sel not in menu.values():
+            selection = list(menu.keys())[0] # افتراضي
+        else:
+            selection = [k for k, v in menu.items() if v == sel][0]
         
         st.markdown("---")
         if st.button("تسجيل الخروج"):
@@ -528,14 +539,12 @@ else:
                 yr = filtered['year'].mode()[0] if not filtered.empty else "-"
                 st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">السنة النشطة</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
 
-            # --- القسم الجديد: مؤشرات الأداء والتميز (تم استبدال Sunburst بـ Treemap) ---
             st.markdown("---")
             st.markdown("### 🏆 مؤشرات الأداء والتميز")
             
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                # Leaderboard
                 top_res = filtered.groupby('researcher')['points'].sum().reset_index().sort_values('points', ascending=False).head(5)
                 fig_lead = px.bar(top_res, x='points', y='researcher', orientation='h', title="🥇 أكثر الباحثين تميزاً (حسب النقاط)", text_auto=True, color_discrete_sequence=['#fbbf24'])
                 st.plotly_chart(fig_lead, use_container_width=True)
@@ -543,9 +552,7 @@ else:
             
             with c2:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                # Treemap (The Professional & Simple Alternative)
                 if not filtered.empty and 'department' in filtered.columns and 'team' in filtered.columns:
-                    # تجميع البيانات أولاً لتقليل التعقيد
                     tree_data = filtered.groupby(['department', 'team'])['points'].sum().reset_index()
                     fig_tree = px.treemap(
                         tree_data, 
@@ -555,11 +562,9 @@ else:
                         color='department',
                         color_discrete_sequence=px.colors.qualitative.Prism
                     )
-                    # تحسين العرض لعامة الناس
                     fig_tree.update_traces(textinfo="label+value+percent entry")
                     st.plotly_chart(fig_tree, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
-            # -------------------------------------------
 
             c1, c2 = st.columns(2)
             with c1:
@@ -692,65 +697,69 @@ else:
             
         session.close()
 
-    # --- 3. تسجيل نتاج ---
+    # --- 3. تسجيل نتاج (ممنوع على Admin و Dept Head) ---
     elif selection == "تسجيل نتاج":
-        st.title("📝 تسجيل نتاج علمي جديد")
-        st.markdown('<div class="rtl-header">📌 اختر نوع النشاط لتخصيص الحقول:</div>', unsafe_allow_html=True)
-        w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
-        st.markdown("---")
-        st.markdown(f'<div class="rtl-header">📄 تفاصيل: {w_type}</div>', unsafe_allow_html=True)
-        if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
-        with st.form(key=f"w_form_{st.session_state['fid']}"):
-            c1, c2 = st.columns([3, 1])
-            title = c1.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
-            date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
-            lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
-            details = {"lang": lang}
-            pts, cls = 10, "غير مصنف"
-            if w_type == "مقال في مجلة علمية":
-                c1, c2 = st.columns(2)
-                j = c1.text_input("اسم المجلة *")
-                issn = c2.text_input("ISSN")
-                cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"])
-                idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"])
-                details.update({"journal": j, "issn": issn, "indexing": idx})
-                pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
-            elif w_type == "مداخلة في مؤتمر":
-                c1, c2 = st.columns(2)
-                conf = c1.text_input("اسم الملتقى *")
-                org = c2.text_input("الجهة المنظمة")
-                scope = st.selectbox("النطاق", ["وطني", "دولي"])
-                details.update({"conf": conf, "organizer": org, "scope": scope})
-                pts = 50 if scope == "دولي" else 25
-            elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
-                c1, c2 = st.columns(2)
-                pub = c1.text_input("دار النشر *")
-                isbn = c2.text_input("ISBN")
-                details.update({"publisher": pub, "isbn": isbn})
-                pts = 80 if w_type == "تأليف كتاب" else 40
-            elif w_type == "تأطير مذكرة":
-                c1, c2 = st.columns(2)
-                stud = c1.text_input("اسم الطالب")
-                lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"])
-                details.update({"student": stud, "level": lvl})
-                pts = 20
-            elif w_type == "مشروع بحث":
-                c1, c2 = st.columns(2)
-                code = c1.text_input("رمز المشروع")
-                role = c2.selectbox("الصفة", ["رئيس", "عضو"])
-                details.update({"code": code, "role": role})
-                pts = 60
-            elif w_type == "براءة اختراع":
-                c1, c2 = st.columns(2)
-                num = c1.text_input("رقم البراءة")
-                body = c2.text_input("الهيئة المانحة")
-                details.update({"number": num, "body": body})
-                pts = 150
-            if st.form_submit_button("💾 حفظ البيانات", type="primary", use_container_width=True):
-                if title:
-                    add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
-                    st.toast("✅ تم الحفظ بنجاح!", icon="🎉"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
-                else: st.warning("يرجى إدخال عنوان العمل")
+        # حماية إضافية في حال تم الوصول عبر الرابط المباشر أو التلاعب
+        if user.role in ['admin', 'dept_head']:
+            st.error("⛔ عذراً، لا تملك صلاحية تسجيل نتاج بحثي.")
+        else:
+            st.title("📝 تسجيل نتاج علمي جديد")
+            st.markdown('<div class="rtl-header">📌 اختر نوع النشاط لتخصيص الحقول:</div>', unsafe_allow_html=True)
+            w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
+            st.markdown("---")
+            st.markdown(f'<div class="rtl-header">📄 تفاصيل: {w_type}</div>', unsafe_allow_html=True)
+            if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
+            with st.form(key=f"w_form_{st.session_state['fid']}"):
+                c1, c2 = st.columns([3, 1])
+                title = c1.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
+                date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
+                lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
+                details = {"lang": lang}
+                pts, cls = 10, "غير مصنف"
+                if w_type == "مقال في مجلة علمية":
+                    c1, c2 = st.columns(2)
+                    j = c1.text_input("اسم المجلة *")
+                    issn = c2.text_input("ISSN")
+                    cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"])
+                    idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"])
+                    details.update({"journal": j, "issn": issn, "indexing": idx})
+                    pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
+                elif w_type == "مداخلة في مؤتمر":
+                    c1, c2 = st.columns(2)
+                    conf = c1.text_input("اسم الملتقى *")
+                    org = c2.text_input("الجهة المنظمة")
+                    scope = st.selectbox("النطاق", ["وطني", "دولي"])
+                    details.update({"conf": conf, "organizer": org, "scope": scope})
+                    pts = 50 if scope == "دولي" else 25
+                elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
+                    c1, c2 = st.columns(2)
+                    pub = c1.text_input("دار النشر *")
+                    isbn = c2.text_input("ISBN")
+                    details.update({"publisher": pub, "isbn": isbn})
+                    pts = 80 if w_type == "تأليف كتاب" else 40
+                elif w_type == "تأطير مذكرة":
+                    c1, c2 = st.columns(2)
+                    stud = c1.text_input("اسم الطالب")
+                    lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"])
+                    details.update({"student": stud, "level": lvl})
+                    pts = 20
+                elif w_type == "مشروع بحث":
+                    c1, c2 = st.columns(2)
+                    code = c1.text_input("رمز المشروع")
+                    role = c2.selectbox("الصفة", ["رئيس", "عضو"])
+                    details.update({"code": code, "role": role})
+                    pts = 60
+                elif w_type == "براءة اختراع":
+                    c1, c2 = st.columns(2)
+                    num = c1.text_input("رقم البراءة")
+                    body = c2.text_input("الهيئة المانحة")
+                    details.update({"number": num, "body": body})
+                    pts = 150
+                if st.form_submit_button("💾 حفظ البيانات", type="primary", use_container_width=True):
+                    if title:
+                        add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
+                        st.toast("✅ تم الحفظ بنجاح!", icon="🎉"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
+                    else: st.warning("يرجى إدخال عنوان العمل")
 
     # --- 4. إدارة الأنشطة ---
     elif selection == "إدارة الأنشطة":
