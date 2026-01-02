@@ -335,6 +335,8 @@ st.markdown("""
     .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
     .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
     .team-header { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
+    .field-label { font-weight: bold; color: #1f2937; display: block; margin-bottom: 2px; }
+    .field-val { color: #4b5563; margin-bottom: 10px; display: block; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -497,6 +499,28 @@ else:
                 yr = filtered['year'].mode()[0] if not filtered.empty else "-"
                 st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">السنة النشطة</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
 
+            # --- القسم الجديد: مؤشرات الأداء والتميز ---
+            st.markdown("---")
+            st.markdown("### 🏆 مؤشرات الأداء والتميز")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                # Leaderboard
+                top_res = filtered.groupby('researcher')['points'].sum().reset_index().sort_values('points', ascending=False).head(5)
+                fig_lead = px.bar(top_res, x='points', y='researcher', orientation='h', title="🥇 أكثر الباحثين تميزاً (حسب النقاط)", text_auto=True, color_discrete_sequence=['#fbbf24'])
+                st.plotly_chart(fig_lead, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            
+            with c2:
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                # Sunburst
+                if not filtered.empty and 'department' in filtered.columns and 'team' in filtered.columns:
+                    fig_sun = px.sunburst(filtered, path=['department', 'team'], values='points', title="🧬 مساهمة الهياكل في الحصيلة العلمية", color_discrete_sequence=px.colors.qualitative.Pastel)
+                    st.plotly_chart(fig_sun, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            # -------------------------------------------
+
             c1, c2 = st.columns(2)
             with c1:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
@@ -513,30 +537,6 @@ else:
                     fig2 = px.bar(daily, x='year', y='count', text_auto=True, color_discrete_sequence=['#2563eb'])
                     st.plotly_chart(fig2, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
-            
-            # --- إضافة قسم التحليل المتقدم ---
-            st.markdown("---")
-            st.markdown("### 🏆 ترتيب الأداء والتميز البحثي")
-            c3, c4 = st.columns(2)
-            with c3:
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.markdown("##### 🥇 أكثر الباحثين تميزاً (حسب النقاط)")
-                if not filtered.empty:
-                    top_res = filtered.groupby('researcher')['points'].sum().reset_index().sort_values('points', ascending=False).head(10)
-                    fig_res = px.bar(top_res, x='points', y='researcher', orientation='h', text_auto=True, color='points', color_continuous_scale='Blues')
-                    fig_res.update_layout(yaxis={'categoryorder':'total ascending'})
-                    st.plotly_chart(fig_res, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-            with c4:
-                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                st.markdown("##### 🎗️ أداء الفرق البحثية")
-                if not filtered.empty:
-                    team_perf = filtered.groupby('team')['points'].sum().reset_index().sort_values('points', ascending=False)
-                    fig_team = px.bar(team_perf, x='team', y='points', text_auto=True, color='team')
-                    st.plotly_chart(fig_team, use_container_width=True)
-                st.markdown('</div>', unsafe_allow_html=True)
-            # --------------------------------
-
         else: st.info("لا توجد بيانات متاحة لعرضها.")
 
     # --- 2. الهيكل التنظيمي ---
