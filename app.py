@@ -337,6 +337,12 @@ st.markdown("""
     .team-header { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
     .field-label { font-weight: bold; color: #1f2937; display: block; margin-bottom: 2px; }
     .field-val { color: #4b5563; margin-bottom: 10px; display: block; font-size: 14px; }
+    
+    /* تنسيق خاص للتبويبات لتعمل كفلاتر بصرية */
+    [data-testid="stTabs"] button {
+        font-family: 'Cairo' !important;
+        font-weight: bold !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -434,7 +440,6 @@ else:
         
         st.info(f"👤 مرحباً: {user.full_name}")
         
-        # --- بناء القائمة حسب الصلاحية ---
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
@@ -662,8 +667,6 @@ else:
     # --- 3. تسجيل نتاج ---
     elif selection == "تسجيل نتاج":
         st.title("📝 تسجيل نتاج علمي جديد")
-        
-        # --- التحقق من الصلاحيات ---
         if user.role in ['admin', 'dept_head']:
             st.error("⚠️ عذراً، لا يمكنك تسجيل نتاج علمي بهذه الصفة.")
         else:
@@ -728,10 +731,7 @@ else:
     elif selection == "إدارة الأنشطة":
         st.title("🗂️ إدارة الأنشطة البحثية")
         search = st.text_input("🔎 بحث سريع (العنوان، الباحث)...")
-        
-        # --- تعديل: استخدام دالة جلب البيانات الذكية لعرض الأنشطة حسب الصلاحية ---
         df = get_smart_data(user)
-        
         if not df.empty:
             if search:
                 df = df[df['title'].str.contains(search, na=False) | df['researcher'].str.contains(search, na=False)]
@@ -784,23 +784,32 @@ else:
                 st.success("تمت الإضافة بنجاح")
             else: st.error("خطأ: اسم المستخدم موجود مسبقاً")
 
-    # --- صفحات العرض ---
+    # --- صفحات العرض (التبويبات الذكية) ---
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
         
         if user.role in ['admin', 'dept_head']:
              st.error("⚠️ عذراً، لا يتوفر سجل أعمال خاص لهذه الصلاحية.")
         else:
-            # هنا نعرض فقط أعمال المستخدم المسجل (الباحث نفسه)
-            # بما أننا في قسم "أعمالي" الشخصي، سنفلتر النتائج لتكون خاصة بالمستخدم فقط
-            # حتى لو كانت الدالة get_smart_data تجلب بيانات أوسع (في حالة رئيس الفرقة مثلاً)
             df = get_smart_data(user)
             if not df.empty:
-                 # فلترة إضافية للتأكد من عرض أعمال المستخدم الحالي فقط في هذا القسم
                  df_my = df[df['user_id'] == user.id]
                  if not df_my.empty:
-                    display_cols = ['title', 'activity_type', 'publication_date', 'points']
-                    st.dataframe(df_my[display_cols], use_container_width=True)
+                    # --- التعديل هنا: استخدام Tabs لعرض كل نوع نشاط في تبويب ---
+                    unique_types = sorted(df_my['activity_type'].unique().tolist())
+                    # إضافة تبويب "الكل" كأول خيار
+                    all_tabs = ["الكل"] + unique_types
+                    tabs = st.tabs(all_tabs)
+                    
+                    # 1. تبويب الكل
+                    with tabs[0]:
+                        st.dataframe(df_my[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
+                    
+                    # 2. تبويبات لكل نشاط
+                    for i, activity in enumerate(unique_types):
+                        with tabs[i+1]:
+                            filtered_df = df_my[df_my['activity_type'] == activity]
+                            st.dataframe(filtered_df[['title', 'publication_date', 'points']], use_container_width=True)
                  else:
                     st.info("لا توجد أعمال مسجلة لك.")
             else:
