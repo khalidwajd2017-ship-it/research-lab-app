@@ -304,7 +304,7 @@ def to_excel(df):
     except: return None
 
 # ==========================================
-# 4. التنسيق (CSS) - المحاذاة القسرية
+# 4. التنسيق (CSS)
 # ==========================================
 st.markdown("""
 <style>
@@ -325,41 +325,12 @@ st.markdown("""
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
     
-    /* --- إصلاح محاذاة القوائم المنسدلة (Expander) لليمين --- */
-    [data-testid="stExpander"] {
-        direction: rtl !important;
-        text-align: right !important;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        background: #fff;
-    }
-    [data-testid="stExpander"] summary {
-        flex-direction: row-reverse !important;
-        justify-content: flex-end !important;
-        text-align: right !important;
-        font-family: 'Cairo', sans-serif !important;
-        font-weight: 700;
-        color: #1e3a8a;
-        padding: 10px !important;
-    }
-    [data-testid="stExpander"] summary p {
-        text-align: right !important;
-        margin: 0 !important;
-        padding-right: 10px !important;
-    }
-    [data-testid="stExpander"] summary:hover {
-        background-color: #f8fafc;
-        color: #2563eb !important;
-    }
-    [data-testid="stExpander"] > div {
-         direction: rtl !important;
-         text-align: right !important;
-         padding: 15px !important;
-         border-top: 1px solid #f1f5f9;
-    }
+    [data-testid="stExpander"] { direction: rtl !important; text-align: right !important; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; background: #fff; }
+    [data-testid="stExpander"] summary { flex-direction: row-reverse !important; justify-content: flex-end !important; text-align: right !important; font-family: 'Cairo', sans-serif !important; font-weight: 700; color: #1e3a8a; padding: 10px !important; }
+    [data-testid="stExpander"] summary p { text-align: right !important; margin: 0 !important; padding-right: 10px !important; }
+    [data-testid="stExpander"] summary:hover { background-color: #f8fafc; color: #2563eb !important; }
+    [data-testid="stExpander"] > div { direction: rtl !important; text-align: right !important; padding: 15px !important; border-top: 1px solid #f1f5f9; }
     
-    /* بطاقات الهيكل التنظيمي */
     .dept-card { background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; margin-bottom: 15px; border-right: 5px solid #2563eb; }
     .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
     .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
@@ -463,29 +434,18 @@ else:
         
         st.info(f"👤 مرحباً: {user.full_name}")
         
-        # --- بناء القائمة حسب الصلاحيات ---
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
+            "تسجيل نتاج": "📝 تسجيل نتاج جديد",
             "إدارة الأنشطة": "🗂️ إدارة الأنشطة",
             "أعمالي": "📂 سجل أعمالي",
             "الإعدادات": "⚙️ الإعدادات"
         }
-        
-        # إضافة خيار "تسجيل نتاج" فقط إذا لم يكن المستخدم مديراً أو رئيس قسم
-        if user.role not in ['admin', 'dept_head']:
-            menu["تسجيل نتاج"] = "📝 تسجيل نتاج جديد"
-            
-        if user.role == 'admin': 
-            menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
+        if user.role == 'admin': menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
             
         sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
-        
-        # التأكد من عدم حدوث خطأ في الاختيار
-        if sel not in menu.values():
-            selection = list(menu.keys())[0] # افتراضي
-        else:
-            selection = [k for k, v in menu.items() if v == sel][0]
+        selection = [k for k, v in menu.items() if v == sel][0]
         
         st.markdown("---")
         if st.button("تسجيل الخروج"):
@@ -539,6 +499,7 @@ else:
                 yr = filtered['year'].mode()[0] if not filtered.empty else "-"
                 st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">السنة النشطة</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
 
+            # --- مؤشرات الأداء ---
             st.markdown("---")
             st.markdown("### 🏆 مؤشرات الأداء والتميز")
             
@@ -554,14 +515,7 @@ else:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
                 if not filtered.empty and 'department' in filtered.columns and 'team' in filtered.columns:
                     tree_data = filtered.groupby(['department', 'team'])['points'].sum().reset_index()
-                    fig_tree = px.treemap(
-                        tree_data, 
-                        path=['department', 'team'], 
-                        values='points', 
-                        title="🧬 مساهمة الهياكل (خريطة شجرية)", 
-                        color='department',
-                        color_discrete_sequence=px.colors.qualitative.Prism
-                    )
+                    fig_tree = px.treemap(tree_data, path=['department', 'team'], values='points', title="🧬 مساهمة الهياكل (خريطة شجرية)", color='department', color_discrete_sequence=px.colors.qualitative.Prism)
                     fig_tree.update_traces(textinfo="label+value+percent entry")
                     st.plotly_chart(fig_tree, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -600,7 +554,6 @@ else:
             
             with tab_info:
                 c_a, c_b = st.columns(2)
-                
                 def field(label, value):
                     return f'<div style="text-align: right; direction: rtl; margin-bottom: 5px;"><b>{label}:</b> {value}</div>'
 
@@ -609,13 +562,11 @@ else:
                     st.markdown(field("الاسم بالعربية", t.name), unsafe_allow_html=True)
                     st.markdown(field("الاسم بالإنجليزية", t.name_en or '-'), unsafe_allow_html=True)
                     st.markdown(field("المختصر", t.short_name or '-'), unsafe_allow_html=True)
-                
                 with c_b:
                     st.markdown(field("رئيس الفرقة", t.head_name or '-'), unsafe_allow_html=True)
                     st.markdown(field("التصنيف", t.classification or '-'), unsafe_allow_html=True)
                     st.markdown(field("الميادين", t.domains or '-'), unsafe_allow_html=True)
                     st.markdown(field("الكلمات المفتاحية", t.keywords or '-'), unsafe_allow_html=True)
-                
                 st.markdown("---")
                 st.markdown(f'<div style="text-align: justify; text-align-last: right; direction: rtl;"><b>التعريف بالفرقة:</b><br>{t.description or "لا يوجد وصف"}</div>', unsafe_allow_html=True)
 
@@ -697,13 +648,15 @@ else:
             
         session.close()
 
-    # --- 3. تسجيل نتاج (ممنوع على Admin و Dept Head) ---
+    # --- 3. تسجيل نتاج (محدث مع تقييد الصلاحيات) ---
     elif selection == "تسجيل نتاج":
-        # حماية إضافية في حال تم الوصول عبر الرابط المباشر أو التلاعب
+        st.title("📝 تسجيل نتاج علمي جديد")
+        
+        # --- التحقق من الصلاحيات ---
         if user.role in ['admin', 'dept_head']:
-            st.error("⛔ عذراً، لا تملك صلاحية تسجيل نتاج بحثي.")
+            st.error("⚠️ عذراً، لا يمكنك تسجيل نتاج علمي بهذه الصفة.")
+            st.info("💡 هذه الخاصية مخصصة للباحثين ورؤساء الفرق فقط.")
         else:
-            st.title("📝 تسجيل نتاج علمي جديد")
             st.markdown('<div class="rtl-header">📌 اختر نوع النشاط لتخصيص الحقول:</div>', unsafe_allow_html=True)
             w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
             st.markdown("---")
