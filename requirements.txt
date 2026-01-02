@@ -1,4 +1,5 @@
 streamlit
+streamlit-option-menu
 pandas
 sqlalchemy
 psycopg2-binary
@@ -6,3 +7,4 @@ bcrypt
 plotly
 xlsxwriter
 openpyxl
+fpdf
