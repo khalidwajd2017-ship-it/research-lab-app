@@ -343,6 +343,19 @@ st.markdown("""
         font-family: 'Cairo' !important;
         font-weight: bold !important;
     }
+    
+    /* === تنسيق الجدول من اليمين لليسار === */
+    [data-testid="stDataFrame"] div[class*="ag-root-wrapper"] {
+        direction: rtl !important;
+    }
+    [data-testid="stDataFrame"] .ag-header-cell-label {
+        justify-content: flex-end !important;
+    }
+    [data-testid="stDataFrame"] .ag-cell-value {
+        text-align: right !important;
+        justify-content: flex-end !important;
+        display: flex;
+    }
 </style>
 """, unsafe_allow_html=True)
 
