@@ -304,7 +304,7 @@ def to_excel(df):
     except: return None
 
 # ==========================================
-# 4. التنسيق (CSS)
+# 4. التنسيق (CSS) - المحاذاة القسرية
 # ==========================================
 st.markdown("""
 <style>
@@ -325,12 +325,41 @@ st.markdown("""
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
     
-    [data-testid="stExpander"] { direction: rtl !important; text-align: right !important; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; background: #fff; }
-    [data-testid="stExpander"] summary { flex-direction: row-reverse !important; justify-content: flex-end !important; text-align: right !important; font-family: 'Cairo', sans-serif !important; font-weight: 700; color: #1e3a8a; padding: 10px !important; }
-    [data-testid="stExpander"] summary p { text-align: right !important; margin: 0 !important; padding-right: 10px !important; }
-    [data-testid="stExpander"] summary:hover { background-color: #f8fafc; color: #2563eb !important; }
-    [data-testid="stExpander"] > div { direction: rtl !important; text-align: right !important; padding: 15px !important; border-top: 1px solid #f1f5f9; }
+    /* --- إصلاح محاذاة القوائم المنسدلة (Expander) لليمين --- */
+    [data-testid="stExpander"] {
+        direction: rtl !important;
+        text-align: right !important;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        background: #fff;
+    }
+    [data-testid="stExpander"] summary {
+        flex-direction: row-reverse !important;
+        justify-content: flex-end !important;
+        text-align: right !important;
+        font-family: 'Cairo', sans-serif !important;
+        font-weight: 700;
+        color: #1e3a8a;
+        padding: 10px !important;
+    }
+    [data-testid="stExpander"] summary p {
+        text-align: right !important;
+        margin: 0 !important;
+        padding-right: 10px !important;
+    }
+    [data-testid="stExpander"] summary:hover {
+        background-color: #f8fafc;
+        color: #2563eb !important;
+    }
+    [data-testid="stExpander"] > div {
+         direction: rtl !important;
+         text-align: right !important;
+         padding: 15px !important;
+         border-top: 1px solid #f1f5f9;
+    }
     
+    /* بطاقات الهيكل التنظيمي */
     .dept-card { background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; margin-bottom: 15px; border-right: 5px solid #2563eb; }
     .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
     .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
@@ -499,7 +528,7 @@ else:
                 yr = filtered['year'].mode()[0] if not filtered.empty else "-"
                 st.markdown(f'<div class="kpi-container"><div class="kpi-info"><div class="kpi-value">{yr}</div><div class="kpi-label">السنة النشطة</div></div><div class="kpi-icon">📅</div></div>', unsafe_allow_html=True)
 
-            # --- القسم الجديد: مؤشرات الأداء والتميز ---
+            # --- القسم الجديد: مؤشرات الأداء والتميز (تم استبدال Sunburst بـ Treemap) ---
             st.markdown("---")
             st.markdown("### 🏆 مؤشرات الأداء والتميز")
             
@@ -514,9 +543,20 @@ else:
             
             with c2:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                # Treemap (المخطط الشجري المساحي) - أفضل من Sunburst
+                # Treemap (The Professional & Simple Alternative)
                 if not filtered.empty and 'department' in filtered.columns and 'team' in filtered.columns:
-                    fig_tree = px.treemap(filtered, path=['department', 'team'], values='points', title="🧬 مساهمة الهياكل في الحصيلة العلمية (نقاط)", color='points', color_continuous_scale='Blues')
+                    # تجميع البيانات أولاً لتقليل التعقيد
+                    tree_data = filtered.groupby(['department', 'team'])['points'].sum().reset_index()
+                    fig_tree = px.treemap(
+                        tree_data, 
+                        path=['department', 'team'], 
+                        values='points', 
+                        title="🧬 مساهمة الهياكل (خريطة شجرية)", 
+                        color='department',
+                        color_discrete_sequence=px.colors.qualitative.Prism
+                    )
+                    # تحسين العرض لعامة الناس
+                    fig_tree.update_traces(textinfo="label+value+percent entry")
                     st.plotly_chart(fig_tree, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             # -------------------------------------------
