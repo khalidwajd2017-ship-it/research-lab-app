@@ -257,7 +257,6 @@ def get_img_as_base64(file_path):
         return base64.b64encode(data).decode()
     except: return None
 
-# --- تم تحديث الاستعلام لحل مشكلة رئيس القسم ---
 def get_smart_data(user):
     base_q = """
     SELECT 
@@ -270,9 +269,6 @@ def get_smart_data(user):
     LEFT JOIN teams t ON u.team_id = t.id
     LEFT JOIN departments d ON u.department_id = d.id 
     """
-    # ملاحظة: تم تغيير d ON t.department_id إلى d ON u.department_id
-    # هذا يضمن ظهور القسم حتى لو لم يكن المستخدم في فرقة (مثل رئيس القسم)
-    
     try:
         df = pd.read_sql(base_q, engine)
         df['department'] = df['department'].fillna('غير محدد')
@@ -281,8 +277,6 @@ def get_smart_data(user):
         df['publication_date'] = pd.to_datetime(df['publication_date']).dt.date
         
         if df.empty: return df
-        
-        # تصفية البيانات حسب الصلاحية
         if user.role == 'admin': return df
         elif user.role == 'dept_head': 
             if user.department: return df[df['department'] == user.department.name_ar]
@@ -487,7 +481,7 @@ else:
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # --- 1. لوحة القيادة ---
+    # --- 1. لوحة القيادة (محدثة مع فلتر السنة) ---
     if selection == "لوحة القيادة":
         st.markdown(f"## 📊 لوحة القيادة والتحليل البياني")
         df = get_smart_data(user)
@@ -498,6 +492,12 @@ else:
                 max_date = df['publication_date'].max()
                 d_from = col_d1.date_input("من تاريخ", min_date)
                 d_to = col_d2.date_input("إلى تاريخ", max_date)
+                
+                # --- إضافة فلتر السنة ---
+                available_years = sorted(df['year'].unique().tolist(), reverse=True)
+                selected_year = st.selectbox("أو اختر سنة محددة (تتجاوز التاريخ)", ["الكل"] + available_years)
+                # -----------------------
+
                 c1, c2, c3 = st.columns(3)
                 depts = sorted(df['department'].unique().tolist())
                 sel_dept = c1.selectbox("القسم", ["الكل"] + depts)
@@ -509,7 +509,12 @@ else:
                 types = sorted(df['activity_type'].unique().tolist())
                 sel_type = c3.selectbox("نوع النشاط", ["الكل"] + types)
 
-            filtered = df[(df['publication_date'] >= d_from) & (df['publication_date'] <= d_to)]
+            # منطق الفلترة المحدث
+            if selected_year != "الكل":
+                filtered = df[df['year'] == selected_year]
+            else:
+                filtered = df[(df['publication_date'] >= d_from) & (df['publication_date'] <= d_to)]
+            
             if sel_dept != "الكل": filtered = filtered[filtered['department'] == sel_dept]
             if sel_team != "الكل": filtered = filtered[filtered['team'] == sel_team]
             if sel_type != "الكل": filtered = filtered[filtered['activity_type'] == sel_type]
