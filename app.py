@@ -453,7 +453,6 @@ else:
         
         st.info(f"👤 مرحباً: {user.full_name}")
         
-        # --- بناء القائمة حسب الصلاحية ---
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
@@ -799,10 +798,9 @@ else:
                 st.success("تمت الإضافة بنجاح")
             else: st.error("خطأ: اسم المستخدم موجود مسبقاً")
 
-    # --- صفحات العرض (التبويبات الذكية) ---
+    # --- صفحات العرض ---
     elif selection == "أعمالي":
         st.title("📂 سجل أعمالي")
-        
         if user.role in ['admin', 'dept_head']:
              st.error("⚠️ عذراً، لا يتوفر سجل أعمال خاص لهذه الصلاحية.")
         else:
@@ -810,17 +808,13 @@ else:
             if not df.empty:
                  df_my = df[df['user_id'] == user.id]
                  if not df_my.empty:
-                    # --- التعديل هنا: استخدام Tabs لعرض كل نوع نشاط في تبويب ---
                     unique_types = sorted(df_my['activity_type'].unique().tolist())
-                    # إضافة تبويب "الكل" كأول خيار
                     all_tabs = ["الكل"] + unique_types
                     tabs = st.tabs(all_tabs)
                     
-                    # 1. تبويب الكل
                     with tabs[0]:
                         st.dataframe(df_my[['title', 'activity_type', 'publication_date', 'points']], use_container_width=True)
                     
-                    # 2. تبويبات لكل نشاط
                     for i, activity in enumerate(unique_types):
                         with tabs[i+1]:
                             filtered_df = df_my[df_my['activity_type'] == activity]
