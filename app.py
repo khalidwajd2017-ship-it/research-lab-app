@@ -1,3 +1,4 @@
+pip install streamlit-option-menu
 import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, Column, Integer, String, Date, ForeignKey, Text, inspect
@@ -884,3 +885,4 @@ else:
                 if p1 == p2 and len(p1) > 0:
                     change_password(user.id, p1); st.success("تم التغيير بنجاح")
                 else: st.warning("كلمات المرور غير متطابقة")
+
