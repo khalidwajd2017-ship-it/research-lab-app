@@ -304,7 +304,7 @@ def to_excel(df):
     except: return None
 
 # ==========================================
-# 4. التنسيق (CSS) - المحاذاة القسرية
+# 4. التنسيق (CSS)
 # ==========================================
 st.markdown("""
 <style>
@@ -325,47 +325,16 @@ st.markdown("""
     [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
     .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
     
-    /* --- إصلاح محاذاة القوائم المنسدلة (Expander) لليمين --- */
-    [data-testid="stExpander"] {
-        direction: rtl !important;
-        text-align: right !important;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        margin-bottom: 10px;
-        background: #fff;
-    }
-    [data-testid="stExpander"] summary {
-        flex-direction: row-reverse !important;
-        justify-content: flex-end !important;
-        text-align: right !important;
-        font-family: 'Cairo', sans-serif !important;
-        font-weight: 700;
-        color: #1e3a8a;
-        padding: 10px !important;
-    }
-    [data-testid="stExpander"] summary p {
-        text-align: right !important;
-        margin: 0 !important;
-        padding-right: 10px !important;
-    }
-    [data-testid="stExpander"] summary:hover {
-        background-color: #f8fafc;
-        color: #2563eb !important;
-    }
-    [data-testid="stExpander"] > div {
-         direction: rtl !important;
-         text-align: right !important;
-         padding: 15px !important;
-         border-top: 1px solid #f1f5f9;
-    }
+    [data-testid="stExpander"] { direction: rtl !important; text-align: right !important; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; background: #fff; }
+    [data-testid="stExpander"] summary { flex-direction: row-reverse !important; justify-content: flex-end !important; text-align: right !important; font-family: 'Cairo', sans-serif !important; font-weight: 700; color: #1e3a8a; padding: 10px !important; }
+    [data-testid="stExpander"] summary p { text-align: right !important; margin: 0 !important; padding-right: 10px !important; }
+    [data-testid="stExpander"] summary:hover { background-color: #f8fafc; color: #2563eb !important; }
+    [data-testid="stExpander"] > div { direction: rtl !important; text-align: right !important; padding: 15px !important; border-top: 1px solid #f1f5f9; }
     
-    /* بطاقات الهيكل التنظيمي */
     .dept-card { background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; margin-bottom: 15px; border-right: 5px solid #2563eb; }
     .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
     .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
     .team-header { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
-    .field-label { font-weight: bold; color: #1f2937; display: block; margin-bottom: 2px; }
-    .field-val { color: #4b5563; margin-bottom: 10px; display: block; font-size: 14px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -481,7 +450,7 @@ else:
             st.session_state['logged_in'] = False
             st.rerun()
 
-    # --- 1. لوحة القيادة (محدثة مع فلتر السنة) ---
+    # --- 1. لوحة القيادة ---
     if selection == "لوحة القيادة":
         st.markdown(f"## 📊 لوحة القيادة والتحليل البياني")
         df = get_smart_data(user)
@@ -493,10 +462,8 @@ else:
                 d_from = col_d1.date_input("من تاريخ", min_date)
                 d_to = col_d2.date_input("إلى تاريخ", max_date)
                 
-                # --- إضافة فلتر السنة ---
                 available_years = sorted(df['year'].unique().tolist(), reverse=True)
                 selected_year = st.selectbox("أو اختر سنة محددة (تتجاوز التاريخ)", ["الكل"] + available_years)
-                # -----------------------
 
                 c1, c2, c3 = st.columns(3)
                 depts = sorted(df['department'].unique().tolist())
@@ -509,7 +476,6 @@ else:
                 types = sorted(df['activity_type'].unique().tolist())
                 sel_type = c3.selectbox("نوع النشاط", ["الكل"] + types)
 
-            # منطق الفلترة المحدث
             if selected_year != "الكل":
                 filtered = df[df['year'] == selected_year]
             else:
@@ -547,6 +513,30 @@ else:
                     fig2 = px.bar(daily, x='year', y='count', text_auto=True, color_discrete_sequence=['#2563eb'])
                     st.plotly_chart(fig2, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
+            
+            # --- إضافة قسم التحليل المتقدم ---
+            st.markdown("---")
+            st.markdown("### 🏆 ترتيب الأداء والتميز البحثي")
+            c3, c4 = st.columns(2)
+            with c3:
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                st.markdown("##### 🥇 أكثر الباحثين تميزاً (حسب النقاط)")
+                if not filtered.empty:
+                    top_res = filtered.groupby('researcher')['points'].sum().reset_index().sort_values('points', ascending=False).head(10)
+                    fig_res = px.bar(top_res, x='points', y='researcher', orientation='h', text_auto=True, color='points', color_continuous_scale='Blues')
+                    fig_res.update_layout(yaxis={'categoryorder':'total ascending'})
+                    st.plotly_chart(fig_res, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            with c4:
+                st.markdown('<div class="chart-container">', unsafe_allow_html=True)
+                st.markdown("##### 🎗️ أداء الفرق البحثية")
+                if not filtered.empty:
+                    team_perf = filtered.groupby('team')['points'].sum().reset_index().sort_values('points', ascending=False)
+                    fig_team = px.bar(team_perf, x='team', y='points', text_auto=True, color='team')
+                    st.plotly_chart(fig_team, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            # --------------------------------
+
         else: st.info("لا توجد بيانات متاحة لعرضها.")
 
     # --- 2. الهيكل التنظيمي ---
