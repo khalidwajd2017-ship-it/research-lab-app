@@ -514,10 +514,10 @@ else:
             
             with c2:
                 st.markdown('<div class="chart-container">', unsafe_allow_html=True)
-                # Sunburst
+                # Treemap (المخطط الشجري المساحي) - أفضل من Sunburst
                 if not filtered.empty and 'department' in filtered.columns and 'team' in filtered.columns:
-                    fig_sun = px.sunburst(filtered, path=['department', 'team'], values='points', title="🧬 مساهمة الهياكل في الحصيلة العلمية", color_discrete_sequence=px.colors.qualitative.Pastel)
-                    st.plotly_chart(fig_sun, use_container_width=True)
+                    fig_tree = px.treemap(filtered, path=['department', 'team'], values='points', title="🧬 مساهمة الهياكل في الحصيلة العلمية (نقاط)", color='points', color_continuous_scale='Blues')
+                    st.plotly_chart(fig_tree, use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             # -------------------------------------------
 
