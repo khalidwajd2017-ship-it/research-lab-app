@@ -343,16 +343,6 @@ st.markdown("""
         font-family: 'Cairo' !important;
         font-weight: bold !important;
     }
-    
-    /* تنسيق الجداول لتكون من اليمين لليسار */
-    div[data-testid="stDataFrame"] div[class^="st"] {
-        direction: rtl;
-        text-align: right;
-    }
-    div[data-testid="stDataFrame"] table {
-        direction: rtl;
-        text-align: right;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -450,7 +440,7 @@ else:
         
         st.info(f"👤 مرحباً: {user.full_name}")
         
-        # --- بناء القائمة حسب الصلاحيات ---
+        # --- بناء القائمة حسب الصلاحية ---
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
@@ -743,9 +733,7 @@ else:
     elif selection == "إدارة الأنشطة":
         st.title("🗂️ إدارة الأنشطة البحثية")
         search = st.text_input("🔎 بحث سريع (العنوان، الباحث)...")
-        
         df = get_smart_data(user)
-        
         if not df.empty:
             if search:
                 df = df[df['title'].str.contains(search, na=False) | df['researcher'].str.contains(search, na=False)]
@@ -809,7 +797,9 @@ else:
             if not df.empty:
                  df_my = df[df['user_id'] == user.id]
                  if not df_my.empty:
+                    # --- التعديل هنا: استخدام Tabs لعرض كل نوع نشاط في تبويب ---
                     unique_types = sorted(df_my['activity_type'].unique().tolist())
+                    # إضافة تبويب "الكل" كأول خيار
                     all_tabs = ["الكل"] + unique_types
                     tabs = st.tabs(all_tabs)
                     
