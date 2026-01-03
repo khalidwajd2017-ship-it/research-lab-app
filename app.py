@@ -339,14 +339,20 @@ def process_text_for_pdf(text):
 class PDF(FPDF):
     def header(self):
         pass
+
     def footer(self):
+        # الموقع عند 1.5 سم من الأسفل
         self.set_y(-15)
-        # نستخدم Amiri دائماً في الفوتر
+        # استخدام الخط العربي (أو الافتراضي) للرقم
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
              self.set_font('helvetica', '', 8)
-        self.cell(0, 10, f'Page {self.page_no()}', align='C')
+        
+        # طباعة رقم الصفحة (محاذاة في المنتصف)
+        # {nb} هو رمز مستبدل بإجمالي الصفحات عند استخدام alias_nb_pages()
+        page_num = process_text_for_pdf(f"الصفحة {self.page_no()} من {{nb}}")
+        self.cell(0, 10, page_num, 0, 0, 'C')
 
 def generate_cv_pdf(user, df_works):
     font_path = ensure_font_exists()
@@ -359,9 +365,10 @@ def generate_cv_pdf(user, df_works):
         pdf.cell(0, 10, "Arabic font not loaded.", ln=True)
         return bytes(pdf.output())
 
-    pdf = FPDF()
-    # تفعيل الفاصل التلقائي
-    pdf.set_auto_page_break(auto=True, margin=15) 
+    pdf = PDF()
+    # تفعيل حساب إجمالي الصفحات
+    pdf.alias_nb_pages() 
+    pdf.set_auto_page_break(auto=True, margin=20) 
     
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
@@ -393,7 +400,7 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(5)
     
     if not df_works.empty:
-        # فرز البيانات: النوع، ثم السنة تنازلياً
+        # فرز البيانات
         df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
         current_type = None
@@ -410,9 +417,7 @@ def generate_cv_pdf(user, df_works):
                 pdf.set_text_color(30, 60, 140)
                 type_title = process_text_for_pdf(f"• {current_type}")
                 
-                # ضبط X دائماً لليسار قبل الطباعة
                 pdf.set_x(10)
-                # w=190 (تقريباً عرض A4 ناقص الهوامش) لتجنب خطأ المساحة
                 pdf.cell(190, 8, type_title, ln=True, align='R')
             
             # طباعة التفاصيل
@@ -424,9 +429,7 @@ def generate_cv_pdf(user, df_works):
             full_text = f"- {title_clean} ({date_clean})"
             final_text = process_text_for_pdf(full_text)
             
-            # ضبط X دائماً لليسار قبل الطباعة
             pdf.set_x(10) 
-            # w=190 لضمان وجود مساحة كافية للالتفاف وعدم ظهور خطأ
             pdf.multi_cell(190, 6, final_text, align='R')
             
     else:
@@ -473,15 +476,11 @@ st.markdown("""
     [data-testid="stDataFrame"] .ag-header-cell-label { justify-content: flex-end !important; }
     [data-testid="stDataFrame"] .ag-cell-value { text-align: right !important; justify-content: flex-end !important; display: flex; }
     
-    /* === تعديل القائمة الجانبية لتكون RTL بشكل كامل === */
-    
-    /* جعل الحاوية الرئيسية flex-column لترتيب العناصر عمودياً */
+    /* === تعديلات القائمة الجانبية (Sidebar) === */
+    section[data-testid="stSidebar"] .stRadio > label { display: none; }
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] {
         flex-direction: column;
-        width: 100%;
     }
-
-    /* تنسيق كل زر (label) داخل القائمة */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label {
         background: transparent;
         padding: 10px 15px;
@@ -491,41 +490,36 @@ st.markdown("""
         transition: all 0.3s;
         border: 1px solid transparent;
         width: 100%;
-        
-        /* هذا هو الجزء الأهم للمحاذاة */
         display: flex;
-        flex-direction: row-reverse; /* عكس الاتجاه: النص يسار، الأيقونة يمين (إن وجدت) */
-        justify-content: flex-start; /* البدء من اليمين (بسبب الـ RTL العام للصفحة) */
+        /* المحاذاة لليمين */
+        flex-direction: row-reverse; 
+        justify-content: flex-start;
         align-items: center;
-        
         font-family: 'Cairo';
         font-weight: 600;
-        text-align: right; /* ضمان محاذاة النص لليمين */
+        text-align: right;
     }
     
-    /* تأثير التحويم (Hover) */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:hover {
         background: rgba(37, 99, 235, 0.1);
         color: #2563eb;
     }
     
-    /* تنسيق العنصر النشط (Selected) */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label[data-checked="true"] {
         background: #2563eb;
         color: white;
         box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
     }
     
-    /* إخفاء دائرة الاختيار الافتراضية */
+    /* إخفاء الدوائر الافتراضية (Radio buttons) */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { 
         display: none; 
     }
     
-    /* ضمان أن النص يأخذ المساحة المتبقية */
+    /* تنسيق النص داخل الزر */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:last-child {
-        width: 100%;
         text-align: right;
-        margin-right: 5px; /* مسافة صغيرة إذا كان هناك أيقونة */
+        width: 100%;
     }
 
 </style>
@@ -618,7 +612,7 @@ else:
         st.markdown(sb_logo, unsafe_allow_html=True)
         
         st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 30px;">
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
             <h3 style="color:#2563eb; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.5; font-weight: 700;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
