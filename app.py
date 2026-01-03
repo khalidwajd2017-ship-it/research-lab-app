@@ -312,13 +312,14 @@ def ensure_font_exists():
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
         try:
-            # استخدام خط Amiri لأنه يدعم العربية بشكل كامل مع fpdf2
             url = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 with open(font_path, "wb") as f:
                     f.write(response.content)
                 return font_path
+            else:
+                return None
         except:
             return None
     return font_path
@@ -339,35 +340,34 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
-        # نستخدم Amiri دائماً في الفوتر لتجنب خطأ الحروف العربية
-        self.set_font('Amiri', '', 8) 
+        if 'Amiri' in self.font_files:
+             self.set_font('Amiri', '', 8)
+        else:
+             self.set_font('helvetica', '', 8)
         self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
 def generate_cv_pdf(user, df_works):
     font_path = ensure_font_exists()
     
-    pdf = PDF()
-    
-    # إذا فشل تحميل الخط العربي، نقوم بإنشاء PDF بسيط بالإنجليزية لتجنب الانهيار
     if not font_path:
+        st.error("فشل تحميل خط اللغة العربية. سيتم استخدام الخط الافتراضي.")
+        pdf = FPDF()
         pdf.add_page()
         pdf.set_font("helvetica", '', 12)
-        pdf.cell(0, 10, "Error: Arabic font not found. Please connect to internet.", ln=True)
-        return pdf.output()
+        pdf.cell(0, 10, "Arabic font not loaded.", ln=True)
+        return bytes(pdf.output())
 
-    # تسجيل الخط العربي
+    pdf = FPDF()
+    # إضافة الخط
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
     
-    # استخدام الخط العربي لكل المستند
     pdf.set_font("Amiri", '', 18)
     
-    # العنوان الرئيسي
     title = process_text_for_pdf(f"السيرة الذاتية الأكاديمية: {user.full_name}")
     pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(5)
 
-    # المعلومات الشخصية
     pdf.set_font("Amiri", '', 12)
     role_str = MEMBER_TYPES.get(user.member_type, user.role)
     role_text = process_text_for_pdf(f"الصفة: {role_str}")
@@ -380,10 +380,8 @@ def generate_cv_pdf(user, df_works):
     pdf.cell(0, 10, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(10)
     
-    # قائمة الأعمال
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("الأنشطة والنتاجات العلمية")
-    # رسم خط فاصل
     pdf.set_draw_color(0, 0, 0)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
@@ -392,13 +390,11 @@ def generate_cv_pdf(user, df_works):
     if not df_works.empty:
         grouped = df_works.groupby('activity_type')
         for atype, subset in grouped:
-            # عنوان نوع النشاط
             pdf.set_font("Amiri", '', 13)
-            pdf.set_text_color(30, 60, 140) # أزرق داكن
+            pdf.set_text_color(30, 60, 140)
             type_title = process_text_for_pdf(f"• {atype}")
             pdf.cell(0, 10, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
-            # تفاصيل الأعمال
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             for _, row in subset.iterrows():
@@ -411,10 +407,11 @@ def generate_cv_pdf(user, df_works):
         no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
         pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
-    return pdf.output()
+    # --- التعديل هنا: تحويل bytearray إلى bytes ---
+    return bytes(pdf.output())
 
 # ==========================================
-# 4. التنسيق (CSS) - المحاذاة والجماليات
+# 4. التنسيق (CSS)
 # ==========================================
 st.markdown("""
 <style>
