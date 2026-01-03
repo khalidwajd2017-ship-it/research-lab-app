@@ -392,46 +392,52 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات
+        # فرز البيانات حسب النوع والسنة
         df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # التجميع حسب النوع
-        grouped_works = df_works_sorted.groupby('activity_type', sort=False)
+        # المتغير لتتبع النوع الحالي
+        current_type = None
         
-        for atype, group in grouped_works:
-            # التحقق من المساحة المتبقية للعنوان
-            if pdf.get_y() > 250: pdf.add_page()
+        # التكرار المباشر على الصفوف (أكثر موثوقية من groupby في الحلقات المعقدة)
+        for index, row in df_works_sorted.iterrows():
             
-            pdf.ln(2) 
-            pdf.set_font("Amiri", '', 13)
-            pdf.set_text_color(30, 60, 140)
+            # فحص إذا تغير نوع النشاط لطباعة العنوان الجديد
+            if row['activity_type'] != current_type:
+                current_type = row['activity_type']
+                
+                # إضافة مسافة وفحص نهاية الصفحة
+                if pdf.get_y() > 250: pdf.add_page()
+                pdf.ln(3)
+                
+                # طباعة العنوان (نوع النشاط)
+                pdf.set_font("Amiri", '', 13)
+                pdf.set_text_color(30, 60, 140)
+                type_title = process_text_for_pdf(f"• {current_type}")
+                pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
-            type_title = process_text_for_pdf(f"• {atype}")
-            pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
-            
+            # طباعة العنصر (العمل)
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            # تكرار العناصر داخل المجموعة
-            for idx, row in group.iterrows():
-                # التحقق من المساحة المتبقية لكل عنصر
-                if pdf.get_y() > 270: 
-                    pdf.add_page()
-                    # إعادة طباعة العنوان في الصفحة الجديدة (اختياري، للوضوح)
-                    pdf.set_font("Amiri", '', 11)
-                    pdf.set_text_color(30, 60, 140)
-                    pdf.cell(0, 8, process_text_for_pdf(f"(تابع) {atype}"), new_x="LMARGIN", new_y="NEXT", align='R')
-                    pdf.set_text_color(0, 0, 0)
-
-                title_clean = str(row['title'])
-                date_clean = str(row['publication_date'])
-                
-                full_text = f"- {title_clean} ({date_clean})"
-                final_text = process_text_for_pdf(full_text)
-                
-                pdf.multi_cell(190, 6, final_text, align='R')
+            title_clean = str(row['title'])
+            date_clean = str(row['publication_date'])
+            full_text = f"- {title_clean} ({date_clean})"
+            final_text = process_text_for_pdf(full_text)
             
-            pdf.ln(2)
+            # فحص هل هناك مساحة كافية للسطر القادم؟
+            # نحسب الارتفاع المتوقع للخلية المتعددة الأسطر
+            # افتراض تقريبي: كل 100 حرف يأخذ سطراً بارتفاع 6
+            estimated_height = (len(final_text) // 90 + 1) * 6 
+            
+            if pdf.get_y() + estimated_height > 270: 
+                pdf.add_page()
+                # إعادة طباعة العنوان في الصفحة الجديدة للتوضيح (اختياري)
+                pdf.set_font("Amiri", '', 11)
+                pdf.set_text_color(30, 60, 140)
+                pdf.cell(0, 8, process_text_for_pdf(f"(تابع) {current_type}"), new_x="LMARGIN", new_y="NEXT", align='R')
+                pdf.set_text_color(0, 0, 0)
+
+            pdf.multi_cell(190, 6, final_text, align='R')
             
     else:
         pdf.set_font("Amiri", '', 12)
