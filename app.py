@@ -325,6 +325,7 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
+    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -339,6 +340,7 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
+        # نستخدم Amiri دائماً في الفوتر
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
@@ -394,6 +396,7 @@ def generate_cv_pdf(user, df_works):
         df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
         # 2. التجميع حسب نوع النشاط
+        # ملاحظة هامة: في pandas, التكرار عبر groupby يعيد (key, dataframe)
         grouped = df_works_sorted.groupby('activity_type', sort=False)
         
         for atype, group_data in grouped:
@@ -412,7 +415,8 @@ def generate_cv_pdf(user, df_works):
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            for _, row in group_data.iterrows():
+            # هنا نقوم بالتكرار على كل صف داخل المجموعة لطباعته
+            for idx, row in group_data.iterrows():
                 title_clean = str(row['title'])
                 date_clean = str(row['publication_date'])
                 
