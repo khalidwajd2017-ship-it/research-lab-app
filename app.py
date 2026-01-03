@@ -325,6 +325,7 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
+    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -339,6 +340,7 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
+        # نستخدم Amiri دائماً في الفوتر
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
@@ -357,7 +359,7 @@ def generate_cv_pdf(user, df_works):
         return bytes(pdf.output())
 
     pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=False) # سنقوم بإدارة الفواصل يدوياً لضمان الدقة
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
     
@@ -390,46 +392,46 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات حسب النوع والسنة
+        # فرز البيانات
         df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # الطريقة الجديدة: تكرار مباشر مع فحص تغيير النوع لطباعة العنوان
-        current_type = None
+        # التجميع حسب النوع
+        grouped_works = df_works_sorted.groupby('activity_type', sort=False)
         
-        for index, row in df_works_sorted.iterrows():
-            # فحص إذا تغير نوع النشاط لطباعة عنوان جديد
-            if row['activity_type'] != current_type:
-                current_type = row['activity_type']
-                
-                # إضافة مسافة وفحص نهاية الصفحة
-                if pdf.get_y() > 260: pdf.add_page()
-                pdf.ln(3)
-                
-                # طباعة العنوان (نوع النشاط)
-                pdf.set_font("Amiri", '', 13)
-                pdf.set_text_color(30, 60, 140)
-                type_title = process_text_for_pdf(f"• {current_type}")
-                pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
+        for atype, group in grouped_works:
+            # التحقق من المساحة المتبقية للعنوان
+            if pdf.get_y() > 250: pdf.add_page()
             
-            # طباعة العنصر (العمل)
+            pdf.ln(2) 
+            pdf.set_font("Amiri", '', 13)
+            pdf.set_text_color(30, 60, 140)
+            
+            type_title = process_text_for_pdf(f"• {atype}")
+            pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
+            
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            title_clean = str(row['title'])
-            date_clean = str(row['publication_date'])
-            full_text = f"- {title_clean} ({date_clean})"
-            final_text = process_text_for_pdf(full_text)
-            
-            # فحص هل هناك مساحة كافية للسطر القادم؟
-            if pdf.get_y() > 270: 
-                pdf.add_page()
-                # إعادة طباعة عنوان النوع في الصفحة الجديدة للتوضيح (اختياري)
-                pdf.set_font("Amiri", '', 11)
-                pdf.set_text_color(30, 60, 140)
-                pdf.cell(0, 8, process_text_for_pdf(f"(تابع) {current_type}"), new_x="LMARGIN", new_y="NEXT", align='R')
-                pdf.set_text_color(0, 0, 0)
+            # تكرار العناصر داخل المجموعة
+            for idx, row in group.iterrows():
+                # التحقق من المساحة المتبقية لكل عنصر
+                if pdf.get_y() > 270: 
+                    pdf.add_page()
+                    # إعادة طباعة العنوان في الصفحة الجديدة (اختياري، للوضوح)
+                    pdf.set_font("Amiri", '', 11)
+                    pdf.set_text_color(30, 60, 140)
+                    pdf.cell(0, 8, process_text_for_pdf(f"(تابع) {atype}"), new_x="LMARGIN", new_y="NEXT", align='R')
+                    pdf.set_text_color(0, 0, 0)
 
-            pdf.multi_cell(190, 6, final_text, align='R')
+                title_clean = str(row['title'])
+                date_clean = str(row['publication_date'])
+                
+                full_text = f"- {title_clean} ({date_clean})"
+                final_text = process_text_for_pdf(full_text)
+                
+                pdf.multi_cell(190, 6, final_text, align='R')
+            
+            pdf.ln(2)
             
     else:
         pdf.set_font("Amiri", '', 12)
