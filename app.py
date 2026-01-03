@@ -338,18 +338,10 @@ def process_text_for_pdf(text):
 
 class PDF(FPDF):
     def header(self):
-        # إضافة ترويسة بسيطة لكل صفحة جديدة
-        if self.page_no() > 1:
-            self.set_y(10)
-            if 'Amiri' in self.font_files:
-                 self.set_font('Amiri', '', 10)
-            # استخدام set_x(10) مع خلية بعرض الصفحة لتجنب مشاكل الهوامش
-            self.set_x(10)
-            self.cell(190, 10, process_text_for_pdf("تابع: قائمة الأنشطة"), 0, 0, 'R')
-            self.ln(10)
-
+        pass
     def footer(self):
         self.set_y(-15)
+        # نستخدم Amiri دائماً في الفوتر
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
@@ -395,54 +387,47 @@ def generate_cv_pdf(user, df_works):
     # --- عنوان القائمة ---
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
-    pdf.set_draw_color(200, 200, 200)
+    pdf.set_draw_color(150, 150, 150)
+    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(2)
-    # استخدام 190 لضمان وجود مساحة وعدم حدوث خطأ
-    pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
     if not df_works.empty:
-        # فرز البيانات
+        # فرز البيانات: النوع، ثم السنة تنازلياً
         df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # استخدام groupby للحلقات لضمان الترتيب
-        grouped = df_sorted.groupby('activity_type', sort=False)
+        current_type = None
         
-        for atype, group_data in grouped:
-            # --- طباعة عنوان المجموعة ---
+        for index, row in df_sorted.iterrows():
+            # طباعة العنوان فقط عند التغيير
+            if row['activity_type'] != current_type:
+                current_type = row['activity_type']
+                
+                if pdf.get_y() > 250: pdf.add_page()
+                else: pdf.ln(3)
+                
+                pdf.set_font("Amiri", '', 13)
+                pdf.set_text_color(30, 60, 140)
+                type_title = process_text_for_pdf(f"• {current_type}")
+                
+                # ضبط X دائماً لليسار قبل الطباعة
+                pdf.set_x(10)
+                # w=190 (تقريباً عرض A4 ناقص الهوامش) لتجنب خطأ المساحة
+                pdf.cell(190, 8, type_title, ln=True, align='R')
             
-            # فحص بسيط إذا كنا في آخر الصفحة لتجنب طباعة العنوان وحده
-            if pdf.get_y() > 250: 
-                pdf.add_page()
-            else:
-                pdf.ln(2)
-
-            pdf.set_font("Amiri", '', 13)
-            pdf.set_text_color(30, 60, 140)
-            type_title = process_text_for_pdf(f"• {atype}")
-            
-            # ضبط X دائماً لليسار قبل الطباعة لتجنب خطأ المساحة
-            pdf.set_x(10)
-            pdf.cell(190, 8, type_title, ln=True, align='R')
-            
-            # --- طباعة العناصر ---
+            # طباعة التفاصيل
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            for index, row in group_data.iterrows():
-                title_clean = str(row['title'])
-                date_clean = str(row['publication_date'])
-                full_text = f"- {title_clean} ({date_clean})"
-                final_text = process_text_for_pdf(full_text)
-                
-                # *** الحل الجذري للخطأ ***
-                # إعادة تعيين المؤشر X إلى الهامش الأيسر قبل كل عملية multi_cell
-                # وتحديد عرض ثابت (190) يملأ الصفحة
-                pdf.set_x(10) 
-                pdf.multi_cell(190, 6, final_text, align='R')
+            title_clean = str(row['title'])
+            date_clean = str(row['publication_date'])
+            full_text = f"- {title_clean} ({date_clean})"
+            final_text = process_text_for_pdf(full_text)
             
-            pdf.ln(2)
+            # ضبط X دائماً لليسار قبل الطباعة
+            pdf.set_x(10) 
+            # w=190 لضمان وجود مساحة كافية للالتفاف وعدم ظهور خطأ
+            pdf.multi_cell(190, 6, final_text, align='R')
             
     else:
         pdf.set_font("Amiri", '', 12)
@@ -453,7 +438,7 @@ def generate_cv_pdf(user, df_works):
     return bytes(pdf.output())
 
 # ==========================================
-# 4. التنسيق (CSS)
+# 4. التنسيق (CSS) - تعديل القائمة الجانبية لتكون RTL
 # ==========================================
 st.markdown("""
 <style>
@@ -488,8 +473,15 @@ st.markdown("""
     [data-testid="stDataFrame"] .ag-header-cell-label { justify-content: flex-end !important; }
     [data-testid="stDataFrame"] .ag-cell-value { text-align: right !important; justify-content: flex-end !important; display: flex; }
     
-    /* تحسين القائمة الجانبية لتشبه الأزرار */
-    section[data-testid="stSidebar"] .stRadio > label { display: none; }
+    /* === تعديل القائمة الجانبية لتكون RTL بشكل كامل === */
+    
+    /* جعل الحاوية الرئيسية flex-column لترتيب العناصر عمودياً */
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    /* تنسيق كل زر (label) داخل القائمة */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label {
         background: transparent;
         padding: 10px 15px;
@@ -499,21 +491,42 @@ st.markdown("""
         transition: all 0.3s;
         border: 1px solid transparent;
         width: 100%;
+        
+        /* هذا هو الجزء الأهم للمحاذاة */
         display: flex;
-        justify-content: flex-end;
+        flex-direction: row-reverse; /* عكس الاتجاه: النص يسار، الأيقونة يمين (إن وجدت) */
+        justify-content: flex-start; /* البدء من اليمين (بسبب الـ RTL العام للصفحة) */
+        align-items: center;
+        
         font-family: 'Cairo';
         font-weight: 600;
+        text-align: right; /* ضمان محاذاة النص لليمين */
     }
+    
+    /* تأثير التحويم (Hover) */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:hover {
         background: rgba(37, 99, 235, 0.1);
         color: #2563eb;
     }
+    
+    /* تنسيق العنصر النشط (Selected) */
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label[data-checked="true"] {
         background: #2563eb;
         color: white;
         box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
     }
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { display: none; }
+    
+    /* إخفاء دائرة الاختيار الافتراضية */
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { 
+        display: none; 
+    }
+    
+    /* ضمان أن النص يأخذ المساحة المتبقية */
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:last-child {
+        width: 100%;
+        text-align: right;
+        margin-right: 5px; /* مسافة صغيرة إذا كان هناك أيقونة */
+    }
 
 </style>
 """, unsafe_allow_html=True)
@@ -613,22 +626,26 @@ else:
         st.markdown(f"<div style='text-align: center; margin-bottom: 20px; font-weight: bold; opacity: 0.7;'>مرحباً بك: {user.full_name} 👋</div>", unsafe_allow_html=True)
         
         # --- القائمة الجانبية ---
-        menu = {
-            "لوحة القيادة": "📊 لوحة القيادة",
-            "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
-            "إدارة الأنشطة": "🗂️ إدارة الأنشطة",
-            "الإعدادات": "⚙️ الإعدادات"
+        # استخدام مفاتيح القاموس كقيم لضمان تطابق النص مع القيمة
+        menu_options = {
+            "📊 لوحة القيادة": "لوحة القيادة",
+            "🏢 الهيكل التنظيمي": "الهيكل التنظيمي",
+            "🗂️ إدارة الأنشطة": "إدارة الأنشطة",
+            "⚙️ الإعدادات": "الإعدادات"
         }
         
         if user.role in ['leader', 'researcher']:
-            menu["تسجيل نتاج"] = "📝 تسجيل نتاج جديد"
-            menu["أعمالي"] = "📂 سجل أعمالي"
+            menu_options["📝 تسجيل نتاج جديد"] = "تسجيل نتاج"
+            menu_options["📂 سجل أعمالي"] = "أعمالي"
             
         if user.role == 'admin': 
-            menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
+            menu_options["👥 إدارة المستخدمين (يدوي)"] = "إدارة المستخدمين"
         
-        sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
-        selection = [k for k, v in menu.items() if v == sel][0]
+        # عرض المفاتيح (النصوص مع الأيقونات) في القائمة
+        selected_label = st.sidebar.radio("القائمة", list(menu_options.keys()), label_visibility="collapsed")
+        
+        # الحصول على القيمة الفعلية للاستخدام في الكود
+        selection = menu_options[selected_label]
         
         st.markdown("---")
         if st.button("تسجيل الخروج", type="secondary"):
