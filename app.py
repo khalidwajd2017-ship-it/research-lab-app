@@ -10,10 +10,10 @@ import json
 import base64
 import os
 import io
-import requests # لتحميل الخط
+import requests
 from fpdf import FPDF
-import arabic_reshaper # لتشبيك الحروف العربية
-from bidi.algorithm import get_display # لعكس اتجاه النص
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -311,41 +311,53 @@ def to_excel(df):
 def download_font():
     font_path = "Cairo-Regular.ttf"
     if not os.path.exists(font_path):
-        url = "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf"
-        response = requests.get(url)
-        with open(font_path, "wb") as f:
-            f.write(response.content)
+        try:
+            url = "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf"
+            response = requests.get(url)
+            with open(font_path, "wb") as f:
+                f.write(response.content)
+        except: pass
     return font_path
 
 def process_arabic_text(text):
     if not text: return ""
-    reshaped_text = arabic_reshaper.reshape(str(text))
-    bidi_text = get_display(reshaped_text)
-    return bidi_text
+    try:
+        reshaped_text = arabic_reshaper.reshape(str(text))
+        bidi_text = get_display(reshaped_text)
+        return bidi_text
+    except: return text
 
 class PDF(FPDF):
     def header(self):
-        # Header code if needed
         pass
     def footer(self):
         self.set_y(-15)
-        self.set_font('Cairo', '', 8)
+        try:
+            self.set_font('Cairo', '', 8)
+        except:
+            self.set_font('Arial', '', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def generate_cv_pdf(user, df_works):
     font_path = download_font()
     
     pdf = PDF()
-    pdf.add_font('Cairo', '', font_path, uni=True)
+    # إضافة الخط العربي
+    if os.path.exists(font_path):
+        pdf.add_font('Cairo', '', font_path, uni=True)
+        main_font = 'Cairo'
+    else:
+        main_font = 'Arial' # Fallback
+        
     pdf.add_page()
     
     # العنوان الرئيسي
-    pdf.set_font("Cairo", '', 18)
+    pdf.set_font(main_font, '', 18)
     title = process_arabic_text(f"السيرة الذاتية الأكاديمية: {user.full_name}")
     pdf.cell(0, 10, title, 0, 1, 'C')
     
     # المعلومات الشخصية
-    pdf.set_font("Cairo", '', 12)
+    pdf.set_font(main_font, '', 12)
     role_text = process_arabic_text(f"الصفة: {MEMBER_TYPES.get(user.member_type, user.role)}")
     team_text = process_arabic_text(f"الهيكل: {user.team.name if user.team else (user.department.name_ar if user.department else 'غير محدد')}")
     
@@ -354,7 +366,7 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(5)
     
     # قائمة الأعمال
-    pdf.set_font("Cairo", '', 14)
+    pdf.set_font(main_font, '', 14)
     header = process_arabic_text("الأنشطة والنتاجات العلمية")
     pdf.cell(0, 10, header, 0, 1, 'R')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
@@ -364,14 +376,14 @@ def generate_cv_pdf(user, df_works):
         grouped = df_works.groupby('activity_type')
         for atype, subset in grouped:
             # نوع النشاط
-            pdf.set_font("Cairo", '', 13)
+            pdf.set_font(main_font, '', 13)
             pdf.set_text_color(30, 60, 140)
             type_title = process_arabic_text(f"• {atype}")
             pdf.cell(0, 10, type_title, 0, 1, 'R')
             
             # الأعمال تحت هذا النوع
             pdf.set_text_color(0, 0, 0)
-            pdf.set_font("Cairo", '', 11)
+            pdf.set_font(main_font, '', 11)
             for _, row in subset.iterrows():
                 work_title = process_arabic_text(f"- {row['title']} ({row['publication_date']})")
                 pdf.multi_cell(0, 8, work_title, 0, 'R')
@@ -380,7 +392,7 @@ def generate_cv_pdf(user, df_works):
         no_data = process_arabic_text("لا توجد أعمال مسجلة.")
         pdf.cell(0, 10, no_data, 0, 1, 'R')
         
-    return pdf.output(dest='S').encode('latin-1')
+    return pdf.output(dest='S').encode('latin-1') # هنا latin-1 وهمي لأننا استخدمنا uni=True في الخط
 
 # ==========================================
 # 4. التنسيق (CSS) - المحاذاة والجماليات
