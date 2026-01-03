@@ -326,6 +326,7 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
+    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -347,6 +348,14 @@ class PDF(FPDF):
              self.set_font('helvetica', '', 8)
         self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
+# --- دالة مساعدة لفحص مساحة الصفحة وإضافة صفحة جديدة عند الحاجة ---
+def check_page_break(pdf, height_needed):
+    # 275 هو الارتفاع الآمن للصفحة قبل الهامش السفلي (A4 = 297mm)
+    if pdf.get_y() + height_needed > 275:
+        pdf.add_page()
+        return True
+    return False
+
 def generate_cv_pdf(user, df_works):
     font_path = ensure_font_exists()
     
@@ -359,8 +368,7 @@ def generate_cv_pdf(user, df_works):
         return bytes(pdf.output())
 
     pdf = FPDF()
-    # تعطيل الفاصل التلقائي لإدارته يدوياً بدقة
-    pdf.set_auto_page_break(auto=False)
+    pdf.set_auto_page_break(auto=False) # نتحكم يدوياً لضمان الدقة
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
     
@@ -385,12 +393,11 @@ def generate_cv_pdf(user, df_works):
     # --- الجدول ---
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
-    pdf.set_draw_color(150, 150, 150)
+    pdf.set_draw_color(200, 200, 200)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
     pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
-    # رسم خط تحت العنوان
-    y_line = pdf.get_y()
-    pdf.line(10, y_line, 200, y_line)
-    pdf.ln(5)
+    pdf.ln(2)
     
     if not df_works.empty:
         # فرز البيانات: النوع، ثم السنة تنازلياً
@@ -403,13 +410,11 @@ def generate_cv_pdf(user, df_works):
             if row['activity_type'] != current_type:
                 current_type = row['activity_type']
                 
-                # التحقق من مساحة العنوان (نحتاج حوالي 20 وحدة)
-                if pdf.get_y() > 260: 
-                    pdf.add_page()
-                else:
-                    pdf.ln(3) # مسافة قبل العنوان الجديد
+                # نحتاج حوالي 15 وحدة للعنوان
+                check_page_break(pdf, 15)
+                pdf.ln(3)
                 
-                # طباعة العنوان
+                # طباعة العنوان (نوع النشاط)
                 pdf.set_font("Amiri", '', 13)
                 pdf.set_text_color(30, 60, 140) # أزرق
                 type_title = process_text_for_pdf(f"• {current_type}")
@@ -430,10 +435,9 @@ def generate_cv_pdf(user, df_works):
             lines_needed = math.ceil(text_len / 85) # تقدير عدد الأسطر
             height_needed = lines_needed * 6 + 2 # +2 هامش بسيط
             
-            # إذا لم تكن هناك مساحة كافية، أضف صفحة جديدة
-            if pdf.get_y() + height_needed > 275:
-                pdf.add_page()
-                # إعادة طباعة عنوان الفئة في الصفحة الجديدة للتوضيح
+            # فحص المساحة قبل الطباعة
+            if check_page_break(pdf, height_needed):
+                # إذا انتقلنا لصفحة جديدة، نكرر العنوان للتوضيح
                 pdf.set_font("Amiri", '', 11)
                 pdf.set_text_color(30, 60, 140)
                 pdf.cell(190, 8, process_text_for_pdf(f"(تابع) {current_type}"), new_x="LMARGIN", new_y="NEXT", align='R')
