@@ -400,52 +400,56 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات: النوع، ثم السنة تنازلياً
-        df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
+        # 1. ترتيب البيانات حسب النوع والسنة
+        df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        current_type = None
+        # 2. التجميع حسب النوع باستخدام groupby
+        # هذا هو التغيير الجذري: حلقة خارجية للمجموعات وحلقة داخلية للعناصر
+        grouped_data = df_works_sorted.groupby('activity_type', sort=False)
         
-        for index, row in df_sorted.iterrows():
-            # --- فحص تغيير نوع النشاط (لكتابة العنوان) ---
-            if row['activity_type'] != current_type:
-                current_type = row['activity_type']
-                
-                # نحتاج حوالي 15 وحدة للعنوان
-                check_page_break(pdf, 15)
-                pdf.ln(3)
-                
-                # طباعة العنوان (نوع النشاط)
-                pdf.set_font("Amiri", '', 13)
-                pdf.set_text_color(30, 60, 140) # أزرق
-                type_title = process_text_for_pdf(f"• {current_type}")
-                pdf.cell(190, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
+        for atype, group in grouped_data:
+            # --- طباعة عنوان المجموعة ---
             
-            # --- طباعة تفاصيل النشاط ---
+            # التحقق من مساحة العنوان (نحتاج حوالي 15 وحدة)
+            if pdf.get_y() > 260: 
+                pdf.add_page()
+            else:
+                pdf.ln(3) # مسافة قبل العنوان الجديد
+            
+            pdf.set_font("Amiri", '', 13)
+            pdf.set_text_color(30, 60, 140) # أزرق
+            type_title = process_text_for_pdf(f"• {atype}")
+            pdf.cell(190, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
+            
+            # --- طباعة العناصر داخل المجموعة ---
             pdf.set_text_color(0, 0, 0) # أسود
             pdf.set_font("Amiri", '', 11)
             
-            title_clean = str(row['title'])
-            date_clean = str(row['publication_date'])
-            full_text = f"- {title_clean} ({date_clean})"
-            final_text = process_text_for_pdf(full_text)
-            
-            # حساب الارتفاع المتوقع للنص
-            # تقدير: كل 90 حرف (تقريباً سطر كامل في A4) يحتاج 6 وحدات ارتفاع
-            text_len = len(final_text)
-            lines_needed = math.ceil(text_len / 85) # تقدير عدد الأسطر
-            height_needed = lines_needed * 6 + 2 # +2 هامش بسيط
-            
-            # فحص المساحة قبل الطباعة
-            if check_page_break(pdf, height_needed):
-                # إذا انتقلنا لصفحة جديدة، نكرر العنوان للتوضيح
-                pdf.set_font("Amiri", '', 11)
-                pdf.set_text_color(30, 60, 140)
-                pdf.cell(190, 8, process_text_for_pdf(f"(تابع) {current_type}"), new_x="LMARGIN", new_y="NEXT", align='R')
-                pdf.set_text_color(0, 0, 0)
-                pdf.set_font("Amiri", '', 11)
+            for index, row in group.iterrows():
+                title_clean = str(row['title'])
+                date_clean = str(row['publication_date'])
+                full_text = f"- {title_clean} ({date_clean})"
+                final_text = process_text_for_pdf(full_text)
+                
+                # حساب الارتفاع المتوقع للنص
+                text_len = len(final_text)
+                lines_needed = math.ceil(text_len / 85) 
+                height_needed = lines_needed * 6 + 2 
+                
+                # فحص المساحة قبل الطباعة
+                if check_page_break(pdf, height_needed):
+                    # إذا انتقلنا لصفحة جديدة، نكرر العنوان للتوضيح
+                    pdf.set_font("Amiri", '', 11)
+                    pdf.set_text_color(30, 60, 140)
+                    pdf.cell(190, 8, process_text_for_pdf(f"(تابع) {atype}"), new_x="LMARGIN", new_y="NEXT", align='R')
+                    pdf.set_text_color(0, 0, 0)
+                    pdf.set_font("Amiri", '', 11)
 
-            # طباعة النص المتعدد الأسطر
-            pdf.multi_cell(190, 6, final_text, align='R')
+                # طباعة النص المتعدد الأسطر
+                pdf.multi_cell(190, 6, final_text, align='R')
+            
+            # فاصل بسيط بعد كل مجموعة
+            pdf.ln(2)
             
     else:
         pdf.set_font("Amiri", '', 12)
