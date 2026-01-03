@@ -343,7 +343,9 @@ class PDF(FPDF):
             self.set_y(10)
             if 'Amiri' in self.font_files:
                  self.set_font('Amiri', '', 10)
-            self.cell(0, 10, process_text_for_pdf("تابع: قائمة الأنشطة"), 0, 0, 'R')
+            # استخدام set_x(10) مع خلية بعرض الصفحة لتجنب مشاكل الهوامش
+            self.set_x(10)
+            self.cell(190, 10, process_text_for_pdf("تابع: قائمة الأنشطة"), 0, 0, 'R')
             self.ln(10)
 
     def footer(self):
@@ -366,9 +368,8 @@ def generate_cv_pdf(user, df_works):
         return bytes(pdf.output())
 
     pdf = FPDF()
-    # ============ التعديل الجوهري: تفعيل الفاصل التلقائي ============
-    # هذا يضمن أن المكتبة تدير الانتقال للصفحة التالية تلقائياً عند امتلاء الصفحة
-    pdf.set_auto_page_break(auto=True, margin=20) 
+    # تفعيل الفاصل التلقائي
+    pdf.set_auto_page_break(auto=True, margin=15) 
     
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
@@ -394,47 +395,60 @@ def generate_cv_pdf(user, df_works):
     # --- عنوان القائمة ---
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
-    pdf.set_draw_color(150, 150, 150)
-    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.set_draw_color(200, 200, 200)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    # استخدام 190 لضمان وجود مساحة وعدم حدوث خطأ
+    pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
     if not df_works.empty:
-        # فرز البيانات: النوع، ثم السنة تنازلياً
+        # فرز البيانات
         df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        current_type = None
+        # استخدام groupby للحلقات لضمان الترتيب
+        grouped = df_sorted.groupby('activity_type', sort=False)
         
-        for index, row in df_sorted.iterrows():
-            # طباعة العنوان فقط عند التغيير
-            if row['activity_type'] != current_type:
-                current_type = row['activity_type']
-                
-                # فحص هامش بسيط للعنوان لضمان عدم وجوده في أسفل الصفحة منفرداً
-                if pdf.get_y() > 250: pdf.add_page()
-                else: pdf.ln(3)
-                
-                pdf.set_font("Amiri", '', 13)
-                pdf.set_text_color(30, 60, 140)
-                type_title = process_text_for_pdf(f"• {current_type}")
-                pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
+        for atype, group_data in grouped:
+            # --- طباعة عنوان المجموعة ---
             
-            # طباعة تفاصيل العمل
+            # فحص بسيط إذا كنا في آخر الصفحة لتجنب طباعة العنوان وحده
+            if pdf.get_y() > 250: 
+                pdf.add_page()
+            else:
+                pdf.ln(2)
+
+            pdf.set_font("Amiri", '', 13)
+            pdf.set_text_color(30, 60, 140)
+            type_title = process_text_for_pdf(f"• {atype}")
+            
+            # ضبط X دائماً لليسار قبل الطباعة لتجنب خطأ المساحة
+            pdf.set_x(10)
+            pdf.cell(190, 8, type_title, ln=True, align='R')
+            
+            # --- طباعة العناصر ---
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            title_clean = str(row['title'])
-            date_clean = str(row['publication_date'])
-            full_text = f"- {title_clean} ({date_clean})"
-            final_text = process_text_for_pdf(full_text)
+            for index, row in group_data.iterrows():
+                title_clean = str(row['title'])
+                date_clean = str(row['publication_date'])
+                full_text = f"- {title_clean} ({date_clean})"
+                final_text = process_text_for_pdf(full_text)
+                
+                # *** الحل الجذري للخطأ ***
+                # إعادة تعيين المؤشر X إلى الهامش الأيسر قبل كل عملية multi_cell
+                # وتحديد عرض ثابت (190) يملأ الصفحة
+                pdf.set_x(10) 
+                pdf.multi_cell(190, 6, final_text, align='R')
             
-            # multi_cell ستدير الانتقال للصفحة التالية تلقائياً بسبب auto_page_break=True
-            pdf.multi_cell(0, 6, final_text, align='R')
+            pdf.ln(2)
             
     else:
         pdf.set_font("Amiri", '', 12)
         no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
-        pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
+        pdf.set_x(10)
+        pdf.cell(190, 10, no_data, ln=True, align='R')
         
     return bytes(pdf.output())
 
