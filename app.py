@@ -10,7 +10,7 @@ import json
 import base64
 import os
 import io
-from streamlit_option_menu import option_menu  # مكتبة القائمة الجانبية الاحترافية
+from fpdf import FPDF # مكتبة إنشاء ملفات PDF
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -304,100 +304,94 @@ def to_excel(df):
         return output.getvalue()
     except: return None
 
+# --- دالة جديدة لتوليد CV PDF ---
+class PDF(FPDF):
+    def header(self):
+        # يمكنك إضافة شعار هنا
+        pass
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+
+def generate_cv_pdf(user, df_works):
+    pdf = PDF()
+    pdf.add_page()
+    
+    # بما أن fpdf العادية لا تدعم العربية جيداً، سنستخدم خطاً بديلاً أو نكتب بالإنجليزية للأجزاء الثابتة
+    # ملاحظة: لدعم العربية الكامل في PDF يتطلب ذلك تحميل ملف خط .ttf خاص (مثل Cairo)
+    # هنا سنستخدم نموذج مبسط يعتمد على النصوص اللاتينية أو العربية إذا تم تكوين الخط
+    # لتجنب الأخطاء، سنفترض أن العناوين قد تكون مختلطة.
+    
+    # إعداد الخط (Arial يدعم الإنجليزية، للعربية نحتاج مكتبة إضافية أو خط مخصص)
+    # للتبسيط والموثوقية في هذا الكود، سنستخدم الخط القياسي
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(0, 10, f"Academic CV: {user.full_name}", 0, 1, 'C')
+    
+    pdf.set_font("Arial", '', 12)
+    pdf.cell(0, 10, f"Role: {user.member_type} | Team: {user.team.name if user.team else 'N/A'}", 0, 1, 'C')
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 14)
+    pdf.cell(0, 10, "Research Activities & Publications", 0, 1, 'L')
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(5)
+    
+    if not df_works.empty:
+        # تجميع الأعمال حسب النوع
+        for atype in df_works['activity_type'].unique():
+            pdf.set_font("Arial", 'B', 12)
+            pdf.set_text_color(30, 60, 140)
+            pdf.cell(0, 10, f"> {atype}", 0, 1, 'L')
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Arial", '', 11)
+            
+            subset = df_works[df_works['activity_type'] == atype]
+            for _, row in subset.iterrows():
+                # نحاول تنظيف النص من الرموز غير المدعومة في اللاتينية
+                title = str(row['title']).encode('latin-1', 'replace').decode('latin-1') 
+                date_str = str(row['publication_date'])
+                pdf.multi_cell(0, 8, f"- {title} ({date_str})")
+            pdf.ln(3)
+    else:
+        pdf.cell(0, 10, "No records found.", 0, 1)
+        
+    return pdf.output(dest='S').encode('latin-1')
+
 # ==========================================
 # 4. التنسيق (CSS) - المحاذاة والجماليات
 # ==========================================
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
-    
     html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
     h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; text-align: right !important; }
-    
-    /* تحسين البطاقات (KPIs) */
-    .kpi-container {
-        background-color: var(--background-color); 
-        padding: 20px; 
-        border-radius: 15px; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.05); 
-        border: 1px solid rgba(0,0,0,0.05); 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
-        margin-bottom: 10px; 
-        transition: transform 0.3s ease;
-    }
-    .kpi-container:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
-    .kpi-value { font-family: 'Cairo'; font-size: 26px; font-weight: 800; line-height: 1.2; }
-    .kpi-label { font-size: 14px; opacity: 0.8; font-weight: 600; }
-    .kpi-icon { width: 50px; height: 50px; background-color: rgba(37, 99, 235, 0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 24px; color: #2563eb; }
-
-    /* الحاويات العامة */
-    .chart-container {
-        background-color: var(--secondary-background-color); 
-        padding: 20px; 
-        border-radius: 16px; 
-        border: 1px solid rgba(0,0,0,0.05); 
-        box-shadow: 0 2px 8px rgba(0,0,0,0.02); 
-        margin-bottom: 20px;
-    }
-
-    /* الأزرار */
-    .stButton>button { 
-        width: 100%; 
-        border-radius: 10px; 
-        font-family: 'Cairo'; 
-        font-weight: bold; 
-        height: 45px; 
-        transition: all 0.3s;
-    }
-
-    /* النماذج */
-    [data-testid="stForm"] { 
-        background: var(--secondary-background-color); 
-        padding: 25px; 
-        border-radius: 16px; 
-        border: 1px solid rgba(0,0,0,0.05); 
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); 
-    }
-
-    /* التبويبات */
-    [data-testid="stTabs"] button {
-        font-family: 'Cairo' !important;
-        font-weight: 700 !important;
-        font-size: 16px !important;
-        border-radius: 8px 8px 0 0 !important;
-    }
-
-    /* القوائم المنسدلة (Expanders) */
-    [data-testid="stExpander"] { 
-        direction: rtl !important; 
-        text-align: right !important; 
-        border: 1px solid rgba(0,0,0,0.1); 
-        border-radius: 10px; 
-        margin-bottom: 10px; 
-        background: var(--secondary-background-color); 
-    }
-    [data-testid="stExpander"] summary { 
-        flex-direction: row-reverse !important; 
-        justify-content: flex-end !important; 
-        text-align: right !important; 
-        font-family: 'Cairo', sans-serif !important; 
-        font-weight: 700; 
-        padding: 12px !important; 
-    }
-    [data-testid="stExpander"] summary p { margin: 0 !important; padding-right: 10px !important; }
-    [data-testid="stExpander"] > div { direction: rtl !important; text-align: right !important; padding: 15px !important; border-top: 1px solid rgba(0,0,0,0.05); }
-
-    /* الجداول */
+    [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
+    .stTextInput input, .stSelectbox div, .stTextArea textarea, .stDateInput input { text-align: right; direction: rtl; border-radius: 8px; font-family: 'Tajawal'; }
+    .kpi-container { background-color: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.04); border: 1px solid #f1f5f9; border-right: 4px solid #3b82f6; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; transition: transform 0.2s; }
+    .kpi-container:hover { transform: translateY(-3px); }
+    .kpi-value { font-family: 'Cairo'; font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.2; }
+    .kpi-label { font-size: 13px; color: #64748b; font-weight: 600; }
+    .kpi-icon { width: 45px; height: 45px; background-color: #eff6ff; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #3b82f6; }
+    .chart-container { background-color: white; padding: 20px; border-radius: 15px; border: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 20px; }
+    .stButton>button { width: 100%; border-radius: 8px; font-family: 'Cairo'; font-weight: bold; }
+    [data-testid="stForm"] { background: white; padding: 25px; border-radius: 12px; border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); }
+    .rtl-header { text-align: right; direction: rtl; width: 100%; display: block; font-family: 'Cairo'; font-weight: 700; color: #1f2937; margin-bottom: 10px; font-size: 18px; }
+    [data-testid="stExpander"] { direction: rtl !important; text-align: right !important; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; background: #fff; }
+    [data-testid="stExpander"] summary { flex-direction: row-reverse !important; justify-content: flex-end !important; text-align: right !important; font-family: 'Cairo', sans-serif !important; font-weight: 700; color: #1e3a8a; padding: 10px !important; }
+    [data-testid="stExpander"] summary p { text-align: right !important; margin: 0 !important; padding-right: 10px !important; }
+    [data-testid="stExpander"] summary:hover { background-color: #f8fafc; color: #2563eb !important; }
+    [data-testid="stExpander"] > div { direction: rtl !important; text-align: right !important; padding: 15px !important; border-top: 1px solid #f1f5f9; }
+    .dept-card { background: #fff; padding: 20px; border-radius: 10px; border: 1px solid #e5e7eb; margin-bottom: 15px; border-right: 5px solid #2563eb; }
+    .dept-title { font-family: 'Cairo'; color: #1e40af; font-size: 18px; font-weight: bold; }
+    .dept-info { font-size: 14px; color: #4b5563; margin-top: 5px; }
+    .team-header { background: #f1f5f9; padding: 15px; border-radius: 8px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
+    .field-label { font-weight: bold; color: #1f2937; display: block; margin-bottom: 2px; }
+    .field-val { color: #4b5563; margin-bottom: 10px; display: block; font-size: 14px; }
+    [data-testid="stTabs"] button { font-family: 'Cairo' !important; font-weight: bold !important; }
     [data-testid="stDataFrame"] div[class*="ag-root-wrapper"] { direction: rtl !important; }
     [data-testid="stDataFrame"] .ag-header-cell-label { justify-content: flex-end !important; }
     [data-testid="stDataFrame"] .ag-cell-value { text-align: right !important; justify-content: flex-end !important; display: flex; }
-    
-    /* بطاقات الهيكل */
-    .dept-card { background: var(--secondary-background-color); padding: 20px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.1); margin-bottom: 15px; border-right: 6px solid #2563eb; }
-    .team-header { background: rgba(37, 99, 235, 0.05); padding: 15px; border-radius: 10px; border-right: 4px solid #10b981; margin-bottom: 10px; text-align: right; }
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -412,13 +406,13 @@ if not st.session_state['logged_in']:
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         logo_path = "logo.png"
-        logo_html = '<div style="font-size: 80px; margin-bottom: 10px; text-align:center;">🏛️</div>'
+        logo_html = '<div style="font-size: 60px; margin-bottom: 10px; text-align:center;">🏛️</div>'
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
             if img: logo_html = f'<div style="display: flex; justify-content: center;"><img src="data:image/png;base64,{img}" style="width: 150px; margin-bottom: 20px;"></div>'
 
         st.markdown(logo_html, unsafe_allow_html=True)
-        st.markdown("""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; width: 100%; margin-bottom: 30px;"><h1 style="color:#2563eb; font-family:'Cairo'; margin: 0; font-size: 2.5rem;">بوابة البحث العلمي</h1><p style="opacity: 0.7; font-size: 1.1rem; margin-top: 5px;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; width: 100%; margin-bottom: 30px;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1><p style="color:#64748b; margin-top: 5px;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
         
         tab_login, tab_signup = st.tabs(["🔐 تسجيل الدخول", "📝 حساب جديد (بالكود)"])
         
@@ -484,47 +478,36 @@ else:
         sb_logo = ""
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
-            if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 140px; margin-bottom: 20px;"></div>'
+            if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
         st.markdown(sb_logo, unsafe_allow_html=True)
         
         st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 30px;">
-            <h3 style="color:#2563eb; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.5; font-weight: 700;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
+            <h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.4;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
         
-        st.markdown(f"<div style='text-align: center; margin-bottom: 20px; font-weight: bold; color: gray;'>مرحباً بك: {user.full_name} 👋</div>", unsafe_allow_html=True)
+        st.info(f"👤 مرحباً: {user.full_name}")
         
-        # --- القائمة الجانبية الاحترافية ---
-        menu_options = ["لوحة القيادة", "الهيكل التنظيمي", "إدارة الأنشطة", "الإعدادات"]
-        menu_icons = ["bar-chart-fill", "diagram-3-fill", "kanban", "gear-fill"]
+        menu = {
+            "لوحة القيادة": "📊 لوحة القيادة",
+            "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
+            "إدارة الأنشطة": "🗂️ إدارة الأنشطة",
+            "الإعدادات": "⚙️ الإعدادات"
+        }
         
         if user.role in ['leader', 'researcher']:
-            menu_options.insert(2, "تسجيل نتاج")
-            menu_icons.insert(2, "pencil-square")
-            menu_options.insert(3, "أعمالي")
-            menu_icons.insert(3, "folder-fill")
+            menu["تسجيل نتاج"] = "📝 تسجيل نتاج جديد"
+            menu["أعمالي"] = "📂 سجل أعمالي"
             
         if user.role == 'admin': 
-            menu_options.insert(3, "إدارة المستخدمين")
-            menu_icons.insert(3, "people-fill")
-
-        selection = option_menu(
-            menu_title=None,
-            options=menu_options,
-            icons=menu_icons,
-            menu_icon="cast",
-            default_index=0,
-            styles={
-                "container": {"padding": "0!important", "background-color": "transparent"},
-                "icon": {"color": "orange", "font-size": "18px"}, 
-                "nav-link": {"font-size": "16px", "text-align": "right", "margin":"5px", "--hover-color": "#eee", "font-family": "Cairo"},
-                "nav-link-selected": {"background-color": "#2563eb"},
-            }
-        )
+            menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
+            
+        sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
+        selection = [k for k, v in menu.items() if v == sel][0]
         
         st.markdown("---")
-        if st.button("تسجيل الخروج", type="secondary"):
+        if st.button("تسجيل الخروج"):
             st.session_state['logged_in'] = False
             st.rerun()
 
@@ -627,7 +610,7 @@ else:
         
         def show_team_details(t):
             st.markdown(f"""
-            <div class="team-header" style="border-right:5px solid #0284c7;">
+            <div class="team-header" style="background:#e0f2fe; border-right:5px solid #0284c7; text-align: right; direction: rtl;">
                 🧬 <b>{t.name}</b>
             </div>
             """, unsafe_allow_html=True)
@@ -653,7 +636,7 @@ else:
                 st.markdown(f'<div style="text-align: justify; text-align-last: right; direction: rtl;"><b>التعريف بالفرقة:</b><br>{t.description or "لا يوجد وصف"}</div>', unsafe_allow_html=True)
 
             with tab_prog:
-                st.markdown(f'<div style="text-align: justify; direction: rtl; padding: 10px; border-radius: 5px; background: rgba(37,99,235,0.05);">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="text-align: justify; direction: rtl; background-color: #e0f7fa; padding: 10px; border-radius: 5px;">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
 
             with tab_members:
                 m_perm = [m for m in t.members if m.member_type == 'permanent']
@@ -733,62 +716,66 @@ else:
     # --- 3. تسجيل نتاج ---
     elif selection == "تسجيل نتاج":
         st.title("📝 تسجيل نتاج علمي جديد")
-        st.markdown('<div class="rtl-header">📌 اختر نوع النشاط لتخصيص الحقول:</div>', unsafe_allow_html=True)
-        w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
-        st.markdown("---")
-        st.markdown(f'<div class="rtl-header">📄 تفاصيل: {w_type}</div>', unsafe_allow_html=True)
-        if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
-        with st.form(key=f"w_form_{st.session_state['fid']}"):
-            c1, c2 = st.columns([3, 1])
-            title = c1.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
-            date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
-            lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
-            details = {"lang": lang}
-            pts, cls = 10, "غير مصنف"
-            if w_type == "مقال في مجلة علمية":
-                c1, c2 = st.columns(2)
-                j = c1.text_input("اسم المجلة *")
-                issn = c2.text_input("ISSN")
-                cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"])
-                idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"])
-                details.update({"journal": j, "issn": issn, "indexing": idx})
-                pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
-            elif w_type == "مداخلة في مؤتمر":
-                c1, c2 = st.columns(2)
-                conf = c1.text_input("اسم الملتقى *")
-                org = c2.text_input("الجهة المنظمة")
-                scope = st.selectbox("النطاق", ["وطني", "دولي"])
-                details.update({"conf": conf, "organizer": org, "scope": scope})
-                pts = 50 if scope == "دولي" else 25
-            elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
-                c1, c2 = st.columns(2)
-                pub = c1.text_input("دار النشر *")
-                isbn = c2.text_input("ISBN")
-                details.update({"publisher": pub, "isbn": isbn})
-                pts = 80 if w_type == "تأليف كتاب" else 40
-            elif w_type == "تأطير مذكرة":
-                c1, c2 = st.columns(2)
-                stud = c1.text_input("اسم الطالب")
-                lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"])
-                details.update({"student": stud, "level": lvl})
-                pts = 20
-            elif w_type == "مشروع بحث":
-                c1, c2 = st.columns(2)
-                code = c1.text_input("رمز المشروع")
-                role = c2.selectbox("الصفة", ["رئيس", "عضو"])
-                details.update({"code": code, "role": role})
-                pts = 60
-            elif w_type == "براءة اختراع":
-                c1, c2 = st.columns(2)
-                num = c1.text_input("رقم البراءة")
-                body = c2.text_input("الهيئة المانحة")
-                details.update({"number": num, "body": body})
-                pts = 150
-            if st.form_submit_button("💾 حفظ البيانات", type="primary", use_container_width=True):
-                if title:
-                    add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
-                    st.toast("✅ تم الحفظ بنجاح!", icon="🎉"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
-                else: st.warning("يرجى إدخال عنوان العمل")
+        
+        if user.role in ['admin', 'dept_head']:
+            st.error("⚠️ عذراً، لا يمكنك تسجيل نتاج علمي بهذه الصفة.")
+        else:
+            st.markdown('<div class="rtl-header">📌 اختر نوع النشاط لتخصيص الحقول:</div>', unsafe_allow_html=True)
+            w_type = st.selectbox("", ACTIVITY_TYPES, label_visibility="collapsed")
+            st.markdown("---")
+            st.markdown(f'<div class="rtl-header">📄 تفاصيل: {w_type}</div>', unsafe_allow_html=True)
+            if 'fid' not in st.session_state: st.session_state['fid'] = int(time.time())
+            with st.form(key=f"w_form_{st.session_state['fid']}"):
+                c1, c2 = st.columns([3, 1])
+                title = c1.text_input("العنوان الكامل للعمل *", key=f"t_{w_type}")
+                date_pub = c2.date_input("التاريخ *", key=f"d_{w_type}")
+                lang = st.selectbox("اللغة", ["العربية", "الإنجليزية", "الفرنسية"], key=f"l_{w_type}")
+                details = {"lang": lang}
+                pts, cls = 10, "غير مصنف"
+                if w_type == "مقال في مجلة علمية":
+                    c1, c2 = st.columns(2)
+                    j = c1.text_input("اسم المجلة *")
+                    issn = c2.text_input("ISSN")
+                    cls = st.selectbox("التصنيف", ["A", "B", "C", "Q1", "Q2", "Q3", "Q4"])
+                    idx = st.multiselect("الفهرسة", ["ASJP", "Scopus", "WoS"])
+                    details.update({"journal": j, "issn": issn, "indexing": idx})
+                    pts = 100 if cls in ["A", "Q1"] else (75 if cls in ["B", "Q2"] else 50)
+                elif w_type == "مداخلة في مؤتمر":
+                    c1, c2 = st.columns(2)
+                    conf = c1.text_input("اسم الملتقى *")
+                    org = c2.text_input("الجهة المنظمة")
+                    scope = st.selectbox("النطاق", ["وطني", "دولي"])
+                    details.update({"conf": conf, "organizer": org, "scope": scope})
+                    pts = 50 if scope == "دولي" else 25
+                elif w_type in ["تأليف كتاب", "فصل في كتاب"]:
+                    c1, c2 = st.columns(2)
+                    pub = c1.text_input("دار النشر *")
+                    isbn = c2.text_input("ISBN")
+                    details.update({"publisher": pub, "isbn": isbn})
+                    pts = 80 if w_type == "تأليف كتاب" else 40
+                elif w_type == "تأطير مذكرة":
+                    c1, c2 = st.columns(2)
+                    stud = c1.text_input("اسم الطالب")
+                    lvl = c2.selectbox("المستوى", ["ماستر", "دكتوراه"])
+                    details.update({"student": stud, "level": lvl})
+                    pts = 20
+                elif w_type == "مشروع بحث":
+                    c1, c2 = st.columns(2)
+                    code = c1.text_input("رمز المشروع")
+                    role = c2.selectbox("الصفة", ["رئيس", "عضو"])
+                    details.update({"code": code, "role": role})
+                    pts = 60
+                elif w_type == "براءة اختراع":
+                    c1, c2 = st.columns(2)
+                    num = c1.text_input("رقم البراءة")
+                    body = c2.text_input("الهيئة المانحة")
+                    details.update({"number": num, "body": body})
+                    pts = 150
+                if st.form_submit_button("💾 حفظ البيانات", type="primary", use_container_width=True):
+                    if title:
+                        add_work_service(user.id, title, json.dumps(details), w_type, cls, date_pub, pts)
+                        st.toast("✅ تم الحفظ بنجاح!", icon="🎉"); time.sleep(1); st.session_state['fid'] = int(time.time()); st.rerun()
+                    else: st.warning("يرجى إدخال عنوان العمل")
 
     # --- 4. إدارة الأنشطة ---
     elif selection == "إدارة الأنشطة":
@@ -858,6 +845,25 @@ else:
             if not df.empty:
                  df_my = df[df['user_id'] == user.id]
                  if not df_my.empty:
+                    # إضافة زر تحميل CV PDF
+                    st.markdown("### 📄 تصدير السيرة الذاتية")
+                    # نقوم بتوليد ملف PDF في الذاكرة
+                    try:
+                        pdf_bytes = generate_cv_pdf(user, df_my)
+                        st.download_button(
+                            label="📥 تحميل السيرة الذاتية (PDF)",
+                            data=pdf_bytes,
+                            file_name=f"CV_{user.username}.pdf",
+                            mime="application/pdf",
+                            type="primary"
+                        )
+                    except Exception as e:
+                        st.error(f"حدث خطأ أثناء إنشاء PDF: {e}")
+                        # بديل Excel في حال فشل PDF
+                        excel_data = to_excel(df_my)
+                        st.download_button("📥 تحميل كملف Excel بديل", excel_data, "My_Works.xlsx")
+
+                    st.markdown("---")
                     unique_types = sorted(df_my['activity_type'].unique().tolist())
                     all_tabs = ["الكل"] + unique_types
                     tabs = st.tabs(all_tabs)
