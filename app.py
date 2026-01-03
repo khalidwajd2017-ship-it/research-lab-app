@@ -309,10 +309,10 @@ def to_excel(df):
 
 # --- دالة تحميل الخط ومعالجة العربية ---
 def ensure_font_exists():
-    font_path = "Cairo-Regular.ttf"
+    font_path = "Amiri-Regular.ttf" # نستخدم Amiri لأنه أكثر استقراراً مع fpdf2
     if not os.path.exists(font_path):
         try:
-            url = "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf"
+            url = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 with open(font_path, "wb") as f:
@@ -325,11 +325,8 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
-    """
-    يجهز النص العربي للظهور بشكل صحيح في PDF
-    """
     if not text: return ""
-    text = str(text) # التأكد من أن المدخل نص
+    text = str(text) 
     try:
         reshaped_text = arabic_reshaper.reshape(text)
         bidi_text = get_display(reshaped_text)
@@ -342,26 +339,32 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
-        # استخدام خط Cairo إذا كان متاحاً
-        if 'Cairo' in self.font_files:
-             self.set_font('Cairo', '', 8)
+        # استخدام خط Amiri إذا كان متاحاً
+        if 'Amiri' in self.font_files:
+             self.set_font('Amiri', '', 8)
         else:
-             self.set_font('Arial', '', 8)
+             self.set_font('helvetica', '', 8)
         self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
 def generate_cv_pdf(user, df_works):
     font_path = ensure_font_exists()
     
     if not font_path:
-        raise Exception("فشل في تحميل خط اللغة العربية. تأكد من الاتصال بالإنترنت.")
+        # Fallback إذا فشل تحميل الخط، نستخدم الخط الافتراضي وننبه المستخدم
+        st.error("فشل تحميل خط اللغة العربية. سيتم استخدام الخط الافتراضي (قد لا تظهر العربية بشكل صحيح).")
+        pdf = PDF()
+        pdf.add_page()
+        pdf.set_font("helvetica", '', 12)
+        pdf.cell(0, 10, "Arabic font not loaded. CV generated in basic mode.", new_x="LMARGIN", new_y="NEXT")
+        return pdf.output()
 
     pdf = PDF()
     # إضافة الخط العربي. fpdf2 يدعم Unicode مباشرة عبر add_font
-    pdf.add_font('Cairo', '', font_path)
+    pdf.add_font('Amiri', '', font_path) # Amiri يدعم العربية بشكل ممتاز
     pdf.add_page()
     
     # استخدام الخط العربي
-    pdf.set_font("Cairo", '', 18)
+    pdf.set_font("Amiri", '', 18)
     
     # العنوان الرئيسي
     title = process_text_for_pdf(f"السيرة الذاتية الأكاديمية: {user.full_name}")
@@ -369,7 +372,7 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(5)
 
     # المعلومات الشخصية
-    pdf.set_font("Cairo", '', 12)
+    pdf.set_font("Amiri", '', 12)
     role_str = MEMBER_TYPES.get(user.member_type, user.role)
     role_text = process_text_for_pdf(f"الصفة: {role_str}")
     
@@ -382,7 +385,7 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(10)
     
     # قائمة الأعمال
-    pdf.set_font("Cairo", '', 14)
+    pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("الأنشطة والنتاجات العلمية")
     # رسم خط فاصل
     pdf.set_draw_color(0, 0, 0)
@@ -394,14 +397,14 @@ def generate_cv_pdf(user, df_works):
         grouped = df_works.groupby('activity_type')
         for atype, subset in grouped:
             # عنوان نوع النشاط
-            pdf.set_font("Cairo", '', 13)
+            pdf.set_font("Amiri", '', 13)
             pdf.set_text_color(30, 60, 140) # أزرق داكن
             type_title = process_text_for_pdf(f"• {atype}")
             pdf.cell(0, 10, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
             # تفاصيل الأعمال
             pdf.set_text_color(0, 0, 0)
-            pdf.set_font("Cairo", '', 11)
+            pdf.set_font("Amiri", '', 11)
             for _, row in subset.iterrows():
                 # تجميع النص: العنوان + التاريخ
                 raw_text = f"- {row['title']} ({row['publication_date']})"
@@ -409,7 +412,7 @@ def generate_cv_pdf(user, df_works):
                 pdf.multi_cell(0, 8, work_text, align='R')
             pdf.ln(3)
     else:
-        pdf.set_font("Cairo", '', 12)
+        pdf.set_font("Amiri", '', 12)
         no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
         pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
