@@ -367,9 +367,9 @@ def generate_cv_pdf(user, df_works):
         pdf.cell(0, 10, "Arabic font not loaded.", ln=True)
         return bytes(pdf.output())
 
-    pdf = PDF()
-    # تفعيل الفاصل التلقائي وهو الحل الجذري للمشكلة
-    pdf.set_auto_page_break(auto=True, margin=20) 
+    pdf = FPDF()
+    # تفعيل الفاصل التلقائي
+    pdf.set_auto_page_break(auto=True, margin=15) 
     
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
@@ -395,19 +395,20 @@ def generate_cv_pdf(user, df_works):
     # --- عنوان القائمة ---
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
-    pdf.set_draw_color(150, 150, 150)
-    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.set_draw_color(200, 200, 200)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    # استخدام 190 لضمان وجود مساحة وعدم حدوث خطأ
+    pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
     if not df_works.empty:
         # فرز البيانات
         df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # التجميع باستخدام groupby
+        # استخدام groupby للحلقات لضمان الترتيب
         grouped = df_sorted.groupby('activity_type', sort=False)
         
-        # حلقة خارجية للمجموعات وحلقة داخلية للعناصر
         for atype, group_data in grouped:
             # --- طباعة عنوان المجموعة ---
             
@@ -452,7 +453,7 @@ def generate_cv_pdf(user, df_works):
     return bytes(pdf.output())
 
 # ==========================================
-# 4. التنسيق (CSS) - تعديل القائمة الجانبية لتكون RTL
+# 4. التنسيق (CSS)
 # ==========================================
 st.markdown("""
 <style>
@@ -487,11 +488,8 @@ st.markdown("""
     [data-testid="stDataFrame"] .ag-header-cell-label { justify-content: flex-end !important; }
     [data-testid="stDataFrame"] .ag-cell-value { text-align: right !important; justify-content: flex-end !important; display: flex; }
     
-    /* === تعديلات القائمة الجانبية (Sidebar) === */
+    /* تحسين القائمة الجانبية لتشبه الأزرار */
     section[data-testid="stSidebar"] .stRadio > label { display: none; }
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] {
-        flex-direction: column;
-    }
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label {
         background: transparent;
         padding: 10px 15px;
@@ -502,36 +500,20 @@ st.markdown("""
         border: 1px solid transparent;
         width: 100%;
         display: flex;
-        /* المحاذاة لليمين */
-        flex-direction: row-reverse; 
-        justify-content: flex-start;
-        align-items: center;
+        justify-content: flex-end;
         font-family: 'Cairo';
         font-weight: 600;
-        text-align: right;
     }
-    
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:hover {
         background: rgba(37, 99, 235, 0.1);
         color: #2563eb;
     }
-    
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label[data-checked="true"] {
         background: #2563eb;
         color: white;
         box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
     }
-    
-    /* إخفاء الدوائر الافتراضية (Radio buttons) */
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { 
-        display: none; 
-    }
-    
-    /* تنسيق النص داخل الزر */
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:last-child {
-        text-align: right;
-        width: 100%;
-    }
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { display: none; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -631,7 +613,6 @@ else:
         st.markdown(f"<div style='text-align: center; margin-bottom: 20px; font-weight: bold; opacity: 0.7;'>مرحباً بك: {user.full_name} 👋</div>", unsafe_allow_html=True)
         
         # --- القائمة الجانبية ---
-        # هنا التعديل: وضع الأيقونة يمين النص
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
