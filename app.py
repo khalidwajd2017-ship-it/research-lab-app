@@ -348,6 +348,14 @@ class PDF(FPDF):
              self.set_font('helvetica', '', 8)
         self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
+# --- دالة مساعدة لفحص مساحة الصفحة وإضافة صفحة جديدة عند الحاجة ---
+def check_page_break(pdf, height_needed):
+    # 275 هو الارتفاع الآمن للصفحة قبل الهامش السفلي (A4 = 297mm)
+    if pdf.get_y() + height_needed > 275:
+        pdf.add_page()
+        return True
+    return False
+
 def generate_cv_pdf(user, df_works):
     font_path = ensure_font_exists()
     
@@ -360,17 +368,14 @@ def generate_cv_pdf(user, df_works):
         return bytes(pdf.output())
 
     pdf = FPDF()
-    # ============ التعديل الجوهري: تفعيل الفاصل التلقائي ============
-    # هذا يضمن أن المكتبة تدير الانتقال للصفحة التالية تلقائياً عند امتلاء الصفحة
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
+    pdf.set_auto_page_break(auto=False) # نتحكم يدوياً لضمان الدقة
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
     
     # --- الرأس ---
     pdf.set_font("Amiri", '', 18)
     title = process_text_for_pdf(f"السيرة الذاتية الأكاديمية: {user.full_name}")
-    pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
+    pdf.cell(190, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(5)
 
     pdf.set_font("Amiri", '', 11)
@@ -381,34 +386,39 @@ def generate_cv_pdf(user, df_works):
     role_text = process_text_for_pdf(f"الصفة: {u_role}")
     team_text = process_text_for_pdf(f"الهيكل: {u_team}")
     
-    pdf.cell(0, 6, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
-    pdf.cell(0, 6, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(190, 6, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(190, 6, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(8)
     
-    # --- عنوان القائمة ---
+    # --- الجدول ---
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
     pdf.set_draw_color(200, 200, 200)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(2)
-    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
-    pdf.ln(5)
+    pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات: النوع، ثم السنة تنازلياً
-        df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
+        # 1. ترتيب البيانات حسب النوع والسنة
+        df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
+        # 2. حلقة واحدة للطباعة لتجنب مشاكل التجميع (Flattening)
         current_type = None
         
-        for index, row in df_sorted.iterrows():
-            # --- طباعة عنوان المجموعة عند تغييره ---
+        for index, row in df_works_sorted.iterrows():
+            
+            # --- فحص تغيير نوع النشاط (لكتابة العنوان) ---
             if row['activity_type'] != current_type:
                 current_type = row['activity_type']
                 
                 # فحص بسيط لضمان عدم طباعة العنوان في آخر الصفحة
-                if pdf.get_y() > 250: pdf.add_page()
-                else: pdf.ln(3)
+                if pdf.get_y() > 250: 
+                    pdf.add_page()
+                else:
+                    pdf.ln(3) # مسافة قبل العنوان الجديد
                 
+                # طباعة العنوان (نوع النشاط)
                 pdf.set_font("Amiri", '', 13)
                 pdf.set_text_color(30, 60, 140) # أزرق
                 type_title = process_text_for_pdf(f"• {current_type}")
@@ -424,13 +434,28 @@ def generate_cv_pdf(user, df_works):
             full_text = f"- {title_clean} ({date_clean})"
             final_text = process_text_for_pdf(full_text)
             
-            # استخدام multi_cell مع w=0 لضمان استخدام كامل العرض المتاح والانتقال التلقائي للصفحة
-            pdf.multi_cell(0, 8, final_text, align='R')
+            # حساب الارتفاع المتوقع للنص
+            # تقدير تقريبي: كل 90 حرف (تقريباً سطر كامل في A4) يحتاج 6 وحدات ارتفاع
+            text_len = len(final_text)
+            lines_needed = math.ceil(text_len / 85) # تقدير عدد الأسطر
+            height_needed = lines_needed * 6 + 2 # +2 هامش بسيط
+            
+            # فحص المساحة قبل الطباعة
+            if check_page_break(pdf, height_needed):
+                # إذا انتقلنا لصفحة جديدة، نكرر العنوان للتوضيح
+                pdf.set_font("Amiri", '', 11)
+                pdf.set_text_color(30, 60, 140)
+                pdf.cell(190, 8, process_text_for_pdf(f"(تابع) {current_type}"), new_x="LMARGIN", new_y="NEXT", align='R')
+                pdf.set_text_color(0, 0, 0)
+                pdf.set_font("Amiri", '', 11)
+
+            # طباعة النص المتعدد الأسطر باستخدام w=0
+            pdf.multi_cell(0, 6, final_text, align='R')
             
     else:
         pdf.set_font("Amiri", '', 12)
         no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
-        pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
+        pdf.cell(190, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
     return bytes(pdf.output())
 
