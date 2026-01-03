@@ -392,20 +392,18 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات حسب النوع والسنة
+        # 1. ترتيب البيانات حسب النوع والسنة
         df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # المتغير لتتبع النوع الحالي
+        # 2. حلقة واحدة للطباعة لتجنب مشاكل التجميع
         current_type = None
         
-        # التكرار المباشر على الصفوف (أكثر موثوقية من groupby في الحلقات المعقدة)
         for index, row in df_works_sorted.iterrows():
-            
-            # فحص إذا تغير نوع النشاط لطباعة العنوان الجديد
+            # فحص إذا تغير نوع النشاط لطباعة عنوان جديد
             if row['activity_type'] != current_type:
                 current_type = row['activity_type']
                 
-                # إضافة مسافة وفحص نهاية الصفحة
+                # إضافة مسافة وفحص نهاية الصفحة للعنوان
                 if pdf.get_y() > 250: pdf.add_page()
                 pdf.ln(3)
                 
@@ -424,19 +422,22 @@ def generate_cv_pdf(user, df_works):
             full_text = f"- {title_clean} ({date_clean})"
             final_text = process_text_for_pdf(full_text)
             
-            # فحص هل هناك مساحة كافية للسطر القادم؟
-            # نحسب الارتفاع المتوقع للخلية المتعددة الأسطر
-            # افتراض تقريبي: كل 100 حرف يأخذ سطراً بارتفاع 6
-            estimated_height = (len(final_text) // 90 + 1) * 6 
+            # حساب ارتفاع النص المتوقع
+            # تقدير تقريبي: 95 حرف في السطر، ارتفاع السطر 6
+            text_len = len(final_text)
+            lines_needed = (text_len // 95) + 1
+            height_needed = lines_needed * 6
             
-            if pdf.get_y() + estimated_height > 270: 
+            # فحص هل هناك مساحة كافية للسطر القادم؟
+            if pdf.get_y() + height_needed > 275: 
                 pdf.add_page()
-                # إعادة طباعة العنوان في الصفحة الجديدة للتوضيح (اختياري)
+                # إعادة طباعة العنوان في الصفحة الجديدة للتوضيح
                 pdf.set_font("Amiri", '', 11)
                 pdf.set_text_color(30, 60, 140)
                 pdf.cell(0, 8, process_text_for_pdf(f"(تابع) {current_type}"), new_x="LMARGIN", new_y="NEXT", align='R')
                 pdf.set_text_color(0, 0, 0)
 
+            # طباعة النص
             pdf.multi_cell(190, 6, final_text, align='R')
             
     else:
