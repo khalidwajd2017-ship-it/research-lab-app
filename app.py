@@ -325,7 +325,6 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
-    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -365,13 +364,12 @@ def generate_cv_pdf(user, df_works):
     # --- الرأس ---
     pdf.set_font("Amiri", '', 18)
     title = process_text_for_pdf(f"السيرة الذاتية الأكاديمية: {user.full_name}")
-    pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
+    pdf.cell(190, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(5)
 
     pdf.set_font("Amiri", '', 11)
     role_str = MEMBER_TYPES.get(user.member_type, user.role)
     
-    # التأكد من عدم وجود قيم None
     u_role = role_str if role_str else "غير محدد"
     u_team = user.team.name if user.team else (user.department.name_ar if user.department else 'غير محدد')
 
@@ -392,35 +390,44 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات حسب السنة ثم النوع
+        # فرز البيانات
         df_works_sorted = df_works.sort_values(by=['year', 'activity_type'], ascending=[False, True])
         
-        # التكرار المباشر لضمان ظهور كل شيء
-        for index, row in df_works_sorted.iterrows():
+        # التجميع حسب النوع لمنع التكرار
+        grouped_works = df_works_sorted.groupby('activity_type')
+        
+        for atype, group in grouped_works:
+            # طباعة عنوان المجموعة مرة واحدة فقط
+            pdf.set_font("Amiri", '', 13)
+            pdf.set_text_color(30, 60, 140)
+            
+            # --- تعديل: إضافة مسافة قبل العنوان ---
+            pdf.ln(2) 
+            
+            type_title = process_text_for_pdf(f"• {atype}")
+            pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
+            
+            # طباعة العناصر تحت هذا العنوان
+            pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            # نوع النشاط (لون مميز)
-            pdf.set_text_color(30, 60, 140)
-            atype_text = process_text_for_pdf(f"[{row['activity_type']}]")
-            pdf.cell(0, 8, atype_text, new_x="LMARGIN", new_y="NEXT", align='R')
+            for _, row in group.iterrows():
+                title_clean = str(row['title'])
+                date_clean = str(row['publication_date'])
+                
+                full_text = f"- {title_clean} ({date_clean})"
+                final_text = process_text_for_pdf(full_text)
+                
+                pdf.multi_cell(190, 6, final_text, align='R')
+                # pdf.ln(1) # تم تقليل المسافة هنا للحفاظ على المساحة
             
-            # التفاصيل (أسود)
-            pdf.set_text_color(0, 0, 0)
-            # التأكد من تحويل كل شيء لنص لتجنب الأخطاء
-            title_clean = str(row['title'])
-            date_clean = str(row['publication_date'])
-            
-            full_text = f"{title_clean} - ({date_clean})"
-            final_text = process_text_for_pdf(full_text)
-            
-            # multi_cell مع عرض 190 لضمان التفاف النص وعدم الخروج
-            pdf.multi_cell(190, 8, final_text, align='R')
-            pdf.ln(1) # مسافة صغيرة بين العناصر
+            # مسافة بعد انتهاء المجموعة
+            pdf.ln(2)
             
     else:
         pdf.set_font("Amiri", '', 12)
         no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
-        pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
+        pdf.cell(190, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
     return bytes(pdf.output())
 
