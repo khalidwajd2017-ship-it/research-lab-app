@@ -325,6 +325,7 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
+    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -339,7 +340,6 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
-        # نستخدم Amiri دائماً في الفوتر
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
@@ -358,59 +358,69 @@ def generate_cv_pdf(user, df_works):
         return bytes(pdf.output())
 
     pdf = FPDF()
-    # إعدادات لضبط العربية
     pdf.set_auto_page_break(auto=True, margin=15)
-    
-    # إضافة الخط
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
     
+    # --- الرأس ---
     pdf.set_font("Amiri", '', 18)
-    
     title = process_text_for_pdf(f"السيرة الذاتية الأكاديمية: {user.full_name}")
-    # استخدام 190 كعرض ثابت للصفحة لتجنب خطأ العرض 0
-    pdf.cell(190, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
+    pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(5)
 
-    pdf.set_font("Amiri", '', 12)
+    pdf.set_font("Amiri", '', 11)
     role_str = MEMBER_TYPES.get(user.member_type, user.role)
-    role_text = process_text_for_pdf(f"الصفة: {role_str}")
     
-    dept_name = user.department.name_ar if user.department else 'غير محدد'
-    team_name = user.team.name if user.team else dept_name
-    team_text = process_text_for_pdf(f"الهيكل: {team_name}")
+    # التأكد من عدم وجود قيم None
+    u_role = role_str if role_str else "غير محدد"
+    u_team = user.team.name if user.team else (user.department.name_ar if user.department else 'غير محدد')
+
+    role_text = process_text_for_pdf(f"الصفة: {u_role}")
+    team_text = process_text_for_pdf(f"الهيكل: {u_team}")
     
-    pdf.cell(190, 10, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
-    pdf.cell(190, 10, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
-    pdf.ln(10)
-    
-    pdf.set_font("Amiri", '', 14)
-    header = process_text_for_pdf("الأنشطة والنتاجات العلمية")
-    pdf.set_draw_color(0, 0, 0)
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(0, 8, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(0, 8, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
+    # --- الجدول ---
+    pdf.set_font("Amiri", '', 14)
+    header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
+    pdf.set_draw_color(200, 200, 200)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(2)
+    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.ln(2)
+    
     if not df_works.empty:
-        grouped = df_works.groupby('activity_type')
-        for atype, subset in grouped:
-            pdf.set_font("Amiri", '', 13)
-            pdf.set_text_color(30, 60, 140)
-            type_title = process_text_for_pdf(f"• {atype}")
-            pdf.cell(190, 10, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
-            
-            pdf.set_text_color(0, 0, 0)
+        # فرز البيانات حسب السنة ثم النوع
+        df_works_sorted = df_works.sort_values(by=['year', 'activity_type'], ascending=[False, True])
+        
+        # التكرار المباشر لضمان ظهور كل شيء
+        for index, row in df_works_sorted.iterrows():
             pdf.set_font("Amiri", '', 11)
-            for _, row in subset.iterrows():
-                raw_text = f"- {row['title']} ({row['publication_date']})"
-                work_text = process_text_for_pdf(raw_text)
-                # استخدام multi_cell مع عرض ثابت 190
-                pdf.multi_cell(190, 8, work_text, align='R')
-            pdf.ln(3)
+            
+            # نوع النشاط (لون مميز)
+            pdf.set_text_color(30, 60, 140)
+            atype_text = process_text_for_pdf(f"[{row['activity_type']}]")
+            pdf.cell(0, 8, atype_text, new_x="LMARGIN", new_y="NEXT", align='R')
+            
+            # التفاصيل (أسود)
+            pdf.set_text_color(0, 0, 0)
+            # التأكد من تحويل كل شيء لنص لتجنب الأخطاء
+            title_clean = str(row['title'])
+            date_clean = str(row['publication_date'])
+            
+            full_text = f"{title_clean} - ({date_clean})"
+            final_text = process_text_for_pdf(full_text)
+            
+            # multi_cell مع عرض 190 لضمان التفاف النص وعدم الخروج
+            pdf.multi_cell(190, 8, final_text, align='R')
+            pdf.ln(1) # مسافة صغيرة بين العناصر
+            
     else:
         pdf.set_font("Amiri", '', 12)
         no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
-        pdf.cell(190, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
+        pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
     return bytes(pdf.output())
 
@@ -567,7 +577,7 @@ else:
         st.markdown(sb_logo, unsafe_allow_html=True)
         
         st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 30px;">
             <h3 style="color:#2563eb; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.5; font-weight: 700;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
