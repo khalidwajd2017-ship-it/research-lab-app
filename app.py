@@ -325,7 +325,6 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
-    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -340,7 +339,6 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
-        # نستخدم Amiri دائماً في الفوتر
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
@@ -392,35 +390,40 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات حسب السنة ثم النوع
-        df_works_sorted = df_works.sort_values(by=['year', 'activity_type'], ascending=[False, True])
+        # 1. ترتيب البيانات حسب النوع والتاريخ
+        df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # التجميع حسب النوع لمنع التكرار (هنا التعديل الأساسي)
-        grouped_works = df_works_sorted.groupby('activity_type')
+        # 2. التجميع حسب نوع النشاط
+        grouped = df_works_sorted.groupby('activity_type', sort=False)
         
-        for atype, group in grouped_works:
-            # طباعة عنوان المجموعة مرة واحدة فقط خارج حلقة العناصر
+        for atype, group_data in grouped:
+            # --- طباعة العنوان (نوع النشاط) مرة واحدة ---
             pdf.set_font("Amiri", '', 13)
             pdf.set_text_color(30, 60, 140)
             
-            pdf.ln(2) 
+            # إضافة مسافة قبل العنوان الجديد
+            if pdf.get_y() > 250: pdf.add_page() # صفحة جديدة يدوياً إذا اقتربنا من الحافة
+            pdf.ln(2)
             
             type_title = process_text_for_pdf(f"• {atype}")
             pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
-            # طباعة العناصر تحت هذا العنوان
+            # --- طباعة العناصر (الأعمال) تحت العنوان ---
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            for _, row in group.iterrows():
+            for _, row in group_data.iterrows():
                 title_clean = str(row['title'])
                 date_clean = str(row['publication_date'])
                 
                 full_text = f"- {title_clean} ({date_clean})"
                 final_text = process_text_for_pdf(full_text)
                 
+                # استخدام multi_cell مع عرض ثابت لتجنب المشاكل
                 pdf.multi_cell(190, 6, final_text, align='R')
+                # pdf.ln(1)
             
+            # مسافة بعد انتهاء المجموعة
             pdf.ln(2)
             
     else:
