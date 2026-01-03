@@ -367,9 +367,9 @@ def generate_cv_pdf(user, df_works):
         pdf.cell(0, 10, "Arabic font not loaded.", ln=True)
         return bytes(pdf.output())
 
-    pdf = FPDF()
-    # تفعيل الفاصل التلقائي
-    pdf.set_auto_page_break(auto=True, margin=15) 
+    pdf = PDF()
+    # تفعيل الفاصل التلقائي وهو الحل الجذري للمشكلة
+    pdf.set_auto_page_break(auto=True, margin=20) 
     
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
@@ -395,11 +395,9 @@ def generate_cv_pdf(user, df_works):
     # --- عنوان القائمة ---
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
-    pdf.set_draw_color(200, 200, 200)
+    pdf.set_draw_color(150, 150, 150)
+    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(2)
-    # استخدام 190 لضمان وجود مساحة وعدم حدوث خطأ
-    pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
     if not df_works.empty:
@@ -453,7 +451,7 @@ def generate_cv_pdf(user, df_works):
     return bytes(pdf.output())
 
 # ==========================================
-# 4. التنسيق (CSS)
+# 4. التنسيق (CSS) - تعديل القائمة الجانبية لتكون RTL
 # ==========================================
 st.markdown("""
 <style>
@@ -488,8 +486,11 @@ st.markdown("""
     [data-testid="stDataFrame"] .ag-header-cell-label { justify-content: flex-end !important; }
     [data-testid="stDataFrame"] .ag-cell-value { text-align: right !important; justify-content: flex-end !important; display: flex; }
     
-    /* تحسين القائمة الجانبية لتشبه الأزرار */
+    /* === تعديلات القائمة الجانبية (Sidebar) === */
     section[data-testid="stSidebar"] .stRadio > label { display: none; }
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] {
+        flex-direction: column;
+    }
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label {
         background: transparent;
         padding: 10px 15px;
@@ -500,20 +501,36 @@ st.markdown("""
         border: 1px solid transparent;
         width: 100%;
         display: flex;
-        justify-content: flex-end;
+        /* المحاذاة لليمين */
+        flex-direction: row-reverse; 
+        justify-content: flex-start;
+        align-items: center;
         font-family: 'Cairo';
         font-weight: 600;
+        text-align: right;
     }
+    
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:hover {
         background: rgba(37, 99, 235, 0.1);
         color: #2563eb;
     }
+    
     section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label[data-checked="true"] {
         background: #2563eb;
         color: white;
         box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
     }
-    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { display: none; }
+    
+    /* إخفاء الدوائر الافتراضية (Radio buttons) */
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { 
+        display: none; 
+    }
+    
+    /* تنسيق النص داخل الزر */
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:last-child {
+        text-align: right;
+        width: 100%;
+    }
 
 </style>
 """, unsafe_allow_html=True)
@@ -605,7 +622,7 @@ else:
         st.markdown(sb_logo, unsafe_allow_html=True)
         
         st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 30px;">
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
             <h3 style="color:#2563eb; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.5; font-weight: 700;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
@@ -613,6 +630,7 @@ else:
         st.markdown(f"<div style='text-align: center; margin-bottom: 20px; font-weight: bold; opacity: 0.7;'>مرحباً بك: {user.full_name} 👋</div>", unsafe_allow_html=True)
         
         # --- القائمة الجانبية ---
+        # هنا التعديل: وضع الأيقونة يمين النص
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
