@@ -404,9 +404,10 @@ def generate_cv_pdf(user, df_works):
         # فرز البيانات
         df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # استخدام groupby للحلقات لضمان الترتيب
+        # التجميع باستخدام groupby
         grouped = df_sorted.groupby('activity_type', sort=False)
         
+        # حلقة خارجية للمجموعات وحلقة داخلية للعناصر
         for atype, group_data in grouped:
             # --- طباعة عنوان المجموعة ---
             
@@ -622,7 +623,7 @@ else:
         st.markdown(sb_logo, unsafe_allow_html=True)
         
         st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 30px;">
             <h3 style="color:#2563eb; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.5; font-weight: 700;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
