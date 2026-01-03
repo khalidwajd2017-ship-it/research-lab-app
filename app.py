@@ -325,7 +325,6 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
-    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -340,6 +339,7 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
+        # نستخدم Amiri دائماً في الفوتر
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
@@ -358,6 +358,9 @@ def generate_cv_pdf(user, df_works):
         return bytes(pdf.output())
 
     pdf = FPDF()
+    # إعدادات لضبط العربية
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
     # إضافة الخط
     pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
@@ -365,7 +368,8 @@ def generate_cv_pdf(user, df_works):
     pdf.set_font("Amiri", '', 18)
     
     title = process_text_for_pdf(f"السيرة الذاتية الأكاديمية: {user.full_name}")
-    pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
+    # استخدام 190 كعرض ثابت للصفحة لتجنب خطأ العرض 0
+    pdf.cell(190, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
     pdf.ln(5)
 
     pdf.set_font("Amiri", '', 12)
@@ -376,15 +380,15 @@ def generate_cv_pdf(user, df_works):
     team_name = user.team.name if user.team else dept_name
     team_text = process_text_for_pdf(f"الهيكل: {team_name}")
     
-    pdf.cell(0, 10, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
-    pdf.cell(0, 10, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(190, 10, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(190, 10, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(10)
     
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("الأنشطة والنتاجات العلمية")
     pdf.set_draw_color(0, 0, 0)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(190, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
     if not df_works.empty:
@@ -393,21 +397,21 @@ def generate_cv_pdf(user, df_works):
             pdf.set_font("Amiri", '', 13)
             pdf.set_text_color(30, 60, 140)
             type_title = process_text_for_pdf(f"• {atype}")
-            pdf.cell(0, 10, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
+            pdf.cell(190, 10, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             for _, row in subset.iterrows():
                 raw_text = f"- {row['title']} ({row['publication_date']})"
                 work_text = process_text_for_pdf(raw_text)
-                pdf.multi_cell(0, 8, work_text, align='R')
+                # استخدام multi_cell مع عرض ثابت 190
+                pdf.multi_cell(190, 8, work_text, align='R')
             pdf.ln(3)
     else:
         pdf.set_font("Amiri", '', 12)
         no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
-        pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
+        pdf.cell(190, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
-    # --- التعديل هنا: تحويل bytearray إلى bytes ---
     return bytes(pdf.output())
 
 # ==========================================
@@ -563,7 +567,7 @@ else:
         st.markdown(sb_logo, unsafe_allow_html=True)
         
         st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 30px;">
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
             <h3 style="color:#2563eb; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.5; font-weight: 700;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
