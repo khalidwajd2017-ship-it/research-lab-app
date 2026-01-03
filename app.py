@@ -309,22 +309,22 @@ def to_excel(df):
 
 # --- دالة تحميل الخط ومعالجة العربية ---
 def ensure_font_exists():
-    font_path = "Amiri-Regular.ttf" # نستخدم Amiri لأنه أكثر استقراراً مع fpdf2
+    font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
         try:
+            # استخدام خط Amiri لأنه يدعم العربية بشكل كامل مع fpdf2
             url = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 with open(font_path, "wb") as f:
                     f.write(response.content)
                 return font_path
-            else:
-                return None
         except:
             return None
     return font_path
 
 def process_text_for_pdf(text):
+    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -339,31 +339,27 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
-        # استخدام خط Amiri إذا كان متاحاً
-        if 'Amiri' in self.font_files:
-             self.set_font('Amiri', '', 8)
-        else:
-             self.set_font('helvetica', '', 8)
+        # نستخدم Amiri دائماً في الفوتر لتجنب خطأ الحروف العربية
+        self.set_font('Amiri', '', 8) 
         self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
 def generate_cv_pdf(user, df_works):
     font_path = ensure_font_exists()
     
+    pdf = PDF()
+    
+    # إذا فشل تحميل الخط العربي، نقوم بإنشاء PDF بسيط بالإنجليزية لتجنب الانهيار
     if not font_path:
-        # Fallback إذا فشل تحميل الخط، نستخدم الخط الافتراضي وننبه المستخدم
-        st.error("فشل تحميل خط اللغة العربية. سيتم استخدام الخط الافتراضي (قد لا تظهر العربية بشكل صحيح).")
-        pdf = PDF()
         pdf.add_page()
         pdf.set_font("helvetica", '', 12)
-        pdf.cell(0, 10, "Arabic font not loaded. CV generated in basic mode.", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 10, "Error: Arabic font not found. Please connect to internet.", ln=True)
         return pdf.output()
 
-    pdf = PDF()
-    # إضافة الخط العربي. fpdf2 يدعم Unicode مباشرة عبر add_font
-    pdf.add_font('Amiri', '', font_path) # Amiri يدعم العربية بشكل ممتاز
+    # تسجيل الخط العربي
+    pdf.add_font('Amiri', '', font_path)
     pdf.add_page()
     
-    # استخدام الخط العربي
+    # استخدام الخط العربي لكل المستند
     pdf.set_font("Amiri", '', 18)
     
     # العنوان الرئيسي
@@ -406,7 +402,6 @@ def generate_cv_pdf(user, df_works):
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             for _, row in subset.iterrows():
-                # تجميع النص: العنوان + التاريخ
                 raw_text = f"- {row['title']} ({row['publication_date']})"
                 work_text = process_text_for_pdf(raw_text)
                 pdf.multi_cell(0, 8, work_text, align='R')
