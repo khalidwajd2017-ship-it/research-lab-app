@@ -10,7 +10,10 @@ import json
 import base64
 import os
 import io
-from fpdf import FPDF # مكتبة إنشاء ملفات PDF
+import requests # لتحميل الخط
+from fpdf import FPDF
+import arabic_reshaper # لتشبيك الحروف العربية
+from bidi.algorithm import get_display # لعكس اتجاه النص
 
 # --- 1. إعدادات الصفحة ---
 st.set_page_config(
@@ -304,57 +307,78 @@ def to_excel(df):
         return output.getvalue()
     except: return None
 
-# --- دالة جديدة لتوليد CV PDF ---
+# --- دالة تحميل الخط ومعالجة العربية ---
+def download_font():
+    font_path = "Cairo-Regular.ttf"
+    if not os.path.exists(font_path):
+        url = "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf"
+        response = requests.get(url)
+        with open(font_path, "wb") as f:
+            f.write(response.content)
+    return font_path
+
+def process_arabic_text(text):
+    if not text: return ""
+    reshaped_text = arabic_reshaper.reshape(str(text))
+    bidi_text = get_display(reshaped_text)
+    return bidi_text
+
 class PDF(FPDF):
     def header(self):
-        # يمكنك إضافة شعار هنا
+        # Header code if needed
         pass
     def footer(self):
         self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
+        self.set_font('Cairo', '', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def generate_cv_pdf(user, df_works):
+    font_path = download_font()
+    
     pdf = PDF()
+    pdf.add_font('Cairo', '', font_path, uni=True)
     pdf.add_page()
     
-    # بما أن fpdf العادية لا تدعم العربية جيداً، سنستخدم خطاً بديلاً أو نكتب بالإنجليزية للأجزاء الثابتة
-    # ملاحظة: لدعم العربية الكامل في PDF يتطلب ذلك تحميل ملف خط .ttf خاص (مثل Cairo)
-    # هنا سنستخدم نموذج مبسط يعتمد على النصوص اللاتينية أو العربية إذا تم تكوين الخط
-    # لتجنب الأخطاء، سنفترض أن العناوين قد تكون مختلطة.
+    # العنوان الرئيسي
+    pdf.set_font("Cairo", '', 18)
+    title = process_arabic_text(f"السيرة الذاتية الأكاديمية: {user.full_name}")
+    pdf.cell(0, 10, title, 0, 1, 'C')
     
-    # إعداد الخط (Arial يدعم الإنجليزية، للعربية نحتاج مكتبة إضافية أو خط مخصص)
-    # للتبسيط والموثوقية في هذا الكود، سنستخدم الخط القياسي
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, f"Academic CV: {user.full_name}", 0, 1, 'C')
+    # المعلومات الشخصية
+    pdf.set_font("Cairo", '', 12)
+    role_text = process_arabic_text(f"الصفة: {MEMBER_TYPES.get(user.member_type, user.role)}")
+    team_text = process_arabic_text(f"الهيكل: {user.team.name if user.team else (user.department.name_ar if user.department else 'غير محدد')}")
     
-    pdf.set_font("Arial", '', 12)
-    pdf.cell(0, 10, f"Role: {user.member_type} | Team: {user.team.name if user.team else 'N/A'}", 0, 1, 'C')
-    pdf.ln(10)
+    pdf.cell(0, 10, role_text, 0, 1, 'R')
+    pdf.cell(0, 10, team_text, 0, 1, 'R')
+    pdf.ln(5)
     
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(0, 10, "Research Activities & Publications", 0, 1, 'L')
+    # قائمة الأعمال
+    pdf.set_font("Cairo", '', 14)
+    header = process_arabic_text("الأنشطة والنتاجات العلمية")
+    pdf.cell(0, 10, header, 0, 1, 'R')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
     if not df_works.empty:
-        # تجميع الأعمال حسب النوع
-        for atype in df_works['activity_type'].unique():
-            pdf.set_font("Arial", 'B', 12)
+        grouped = df_works.groupby('activity_type')
+        for atype, subset in grouped:
+            # نوع النشاط
+            pdf.set_font("Cairo", '', 13)
             pdf.set_text_color(30, 60, 140)
-            pdf.cell(0, 10, f"> {atype}", 0, 1, 'L')
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font("Arial", '', 11)
+            type_title = process_arabic_text(f"• {atype}")
+            pdf.cell(0, 10, type_title, 0, 1, 'R')
             
-            subset = df_works[df_works['activity_type'] == atype]
+            # الأعمال تحت هذا النوع
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font("Cairo", '', 11)
             for _, row in subset.iterrows():
-                # نحاول تنظيف النص من الرموز غير المدعومة في اللاتينية
-                title = str(row['title']).encode('latin-1', 'replace').decode('latin-1') 
-                date_str = str(row['publication_date'])
-                pdf.multi_cell(0, 8, f"- {title} ({date_str})")
-            pdf.ln(3)
+                work_title = process_arabic_text(f"- {row['title']} ({row['publication_date']})")
+                pdf.multi_cell(0, 8, work_title, 0, 'R')
+            pdf.ln(2)
     else:
-        pdf.cell(0, 10, "No records found.", 0, 1)
+        no_data = process_arabic_text("لا توجد أعمال مسجلة.")
+        pdf.cell(0, 10, no_data, 0, 1, 'R')
         
     return pdf.output(dest='S').encode('latin-1')
 
@@ -364,6 +388,7 @@ def generate_cv_pdf(user, df_works):
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Tajawal:wght@400;500;700&display=swap');
+    
     html, body, .stApp { font-family: 'Tajawal', sans-serif; direction: rtl; text-align: right; }
     h1, h2, h3, h4, h5 { font-family: 'Cairo'; font-weight: 800; text-align: right !important; }
     [data-testid="stSidebar"] { background: #fff; border-left: 1px solid #e2e8f0; }
@@ -392,6 +417,34 @@ st.markdown("""
     [data-testid="stDataFrame"] div[class*="ag-root-wrapper"] { direction: rtl !important; }
     [data-testid="stDataFrame"] .ag-header-cell-label { justify-content: flex-end !important; }
     [data-testid="stDataFrame"] .ag-cell-value { text-align: right !important; justify-content: flex-end !important; display: flex; }
+    
+    /* تحسين القائمة الجانبية لتشبه الأزرار */
+    section[data-testid="stSidebar"] .stRadio > label { display: none; }
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label {
+        background: transparent;
+        padding: 10px 15px;
+        border-radius: 8px;
+        margin-bottom: 5px;
+        cursor: pointer;
+        transition: all 0.3s;
+        border: 1px solid transparent;
+        width: 100%;
+        display: flex;
+        justify-content: flex-end;
+        font-family: 'Cairo';
+        font-weight: 600;
+    }
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label:hover {
+        background: rgba(37, 99, 235, 0.1);
+        color: #2563eb;
+    }
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label[data-checked="true"] {
+        background: #2563eb;
+        color: white;
+        box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+    }
+    section[data-testid="stSidebar"] .stRadio > div[role="radiogroup"] > label > div:first-child { display: none; }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -406,13 +459,13 @@ if not st.session_state['logged_in']:
     with c2:
         st.markdown("<br><br>", unsafe_allow_html=True)
         logo_path = "logo.png"
-        logo_html = '<div style="font-size: 60px; margin-bottom: 10px; text-align:center;">🏛️</div>'
+        logo_html = '<div style="font-size: 80px; margin-bottom: 10px; text-align:center;">🏛️</div>'
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
             if img: logo_html = f'<div style="display: flex; justify-content: center;"><img src="data:image/png;base64,{img}" style="width: 150px; margin-bottom: 20px;"></div>'
 
         st.markdown(logo_html, unsafe_allow_html=True)
-        st.markdown("""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; width: 100%; margin-bottom: 30px;"><h1 style="color:#1e40af; font-family:'Cairo'; margin: 0;">بوابة البحث العلمي</h1><p style="color:#64748b; margin-top: 5px;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; width: 100%; margin-bottom: 30px;"><h1 style="color:#2563eb; font-family:'Cairo'; margin: 0; font-size: 2.5rem;">بوابة البحث العلمي</h1><p style="opacity: 0.7; font-size: 1.1rem; margin-top: 5px;">نظام إدارة المخابر الجامعية الموحد</p></div>""", unsafe_allow_html=True)
         
         tab_login, tab_signup = st.tabs(["🔐 تسجيل الدخول", "📝 حساب جديد (بالكود)"])
         
@@ -478,17 +531,18 @@ else:
         sb_logo = ""
         if os.path.exists(logo_path):
             img = get_img_as_base64(logo_path)
-            if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 130px; margin-bottom: 15px;"></div>'
+            if img: sb_logo = f'<div style="text-align:center;"><img src="data:image/png;base64,{img}" style="width: 140px; margin-bottom: 20px;"></div>'
         st.markdown(sb_logo, unsafe_allow_html=True)
         
         st.markdown(f"""
-        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 20px;">
-            <h3 style="color:#1e3a8a; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.4;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
+        <div style="display: flex; justify-content: center; align-items: center; text-align: center; width: 100%; margin-bottom: 30px;">
+            <h3 style="color:#2563eb; font-family:'Cairo'; margin:0; font-size:16px; line-height:1.5; font-weight: 700;">وحدة البحث في علوم الإنسان<br>للدراسات الفلسفية، الاجتماعية والإنسانية</h3>
         </div>
         """, unsafe_allow_html=True)
         
-        st.info(f"👤 مرحباً: {user.full_name}")
+        st.markdown(f"<div style='text-align: center; margin-bottom: 20px; font-weight: bold; opacity: 0.7;'>مرحباً بك: {user.full_name} 👋</div>", unsafe_allow_html=True)
         
+        # --- القائمة الجانبية ---
         menu = {
             "لوحة القيادة": "📊 لوحة القيادة",
             "الهيكل التنظيمي": "🏢 الهيكل التنظيمي",
@@ -502,12 +556,12 @@ else:
             
         if user.role == 'admin': 
             menu["إدارة المستخدمين"] = "👥 إدارة المستخدمين (يدوي)"
-            
+        
         sel = st.sidebar.radio("القائمة", list(menu.values()), label_visibility="collapsed")
         selection = [k for k, v in menu.items() if v == sel][0]
         
         st.markdown("---")
-        if st.button("تسجيل الخروج"):
+        if st.button("تسجيل الخروج", type="secondary"):
             st.session_state['logged_in'] = False
             st.rerun()
 
@@ -610,7 +664,7 @@ else:
         
         def show_team_details(t):
             st.markdown(f"""
-            <div class="team-header" style="background:#e0f2fe; border-right:5px solid #0284c7; text-align: right; direction: rtl;">
+            <div class="team-header" style="border-right:5px solid #0284c7;">
                 🧬 <b>{t.name}</b>
             </div>
             """, unsafe_allow_html=True)
@@ -636,7 +690,7 @@ else:
                 st.markdown(f'<div style="text-align: justify; text-align-last: right; direction: rtl;"><b>التعريف بالفرقة:</b><br>{t.description or "لا يوجد وصف"}</div>', unsafe_allow_html=True)
 
             with tab_prog:
-                st.markdown(f'<div style="text-align: justify; direction: rtl; background-color: #e0f7fa; padding: 10px; border-radius: 5px;">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="text-align: justify; direction: rtl; padding: 10px; border-radius: 5px; background: rgba(37,99,235,0.05);">{t.program_desc or "لم يتم إدخال وصف البرنامج العلمي بعد."}</div>', unsafe_allow_html=True)
 
             with tab_members:
                 m_perm = [m for m in t.members if m.member_type == 'permanent']
@@ -847,23 +901,22 @@ else:
                  if not df_my.empty:
                     # إضافة زر تحميل CV PDF
                     st.markdown("### 📄 تصدير السيرة الذاتية")
-                    # نقوم بتوليد ملف PDF في الذاكرة
-                    try:
-                        pdf_bytes = generate_cv_pdf(user, df_my)
-                        st.download_button(
-                            label="📥 تحميل السيرة الذاتية (PDF)",
-                            data=pdf_bytes,
-                            file_name=f"CV_{user.username}.pdf",
-                            mime="application/pdf",
-                            type="primary"
-                        )
-                    except Exception as e:
-                        st.error(f"حدث خطأ أثناء إنشاء PDF: {e}")
-                        # بديل Excel في حال فشل PDF
-                        excel_data = to_excel(df_my)
-                        st.download_button("📥 تحميل كملف Excel بديل", excel_data, "My_Works.xlsx")
-
+                    if st.button("🚀 إنشاء وتصدير CV (PDF)", type="primary"):
+                        try:
+                            pdf_bytes = generate_cv_pdf(user, df_my)
+                            st.download_button(
+                                label="📥 اضغط لتحميل ملف الـ PDF",
+                                data=pdf_bytes,
+                                file_name=f"CV_{user.username}.pdf",
+                                mime="application/pdf",
+                                type="primary"
+                            )
+                            st.success("✅ تم إنشاء الملف بنجاح! اضغط الزر أعلاه للتحميل.")
+                        except Exception as e:
+                            st.error(f"خطأ: {e}")
+                    
                     st.markdown("---")
+                    
                     unique_types = sorted(df_my['activity_type'].unique().tolist())
                     all_tabs = ["الكل"] + unique_types
                     tabs = st.tabs(all_tabs)
