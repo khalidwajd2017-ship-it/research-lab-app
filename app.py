@@ -325,6 +325,7 @@ def ensure_font_exists():
     return font_path
 
 def process_text_for_pdf(text):
+    """معالجة النص العربي لـ FPDF"""
     if not text: return ""
     text = str(text) 
     try:
@@ -339,6 +340,7 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
+        # نستخدم Amiri دائماً في الفوتر
         if 'Amiri' in self.font_files:
              self.set_font('Amiri', '', 8)
         else:
@@ -390,18 +392,17 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # فرز البيانات
+        # فرز البيانات حسب السنة ثم النوع
         df_works_sorted = df_works.sort_values(by=['year', 'activity_type'], ascending=[False, True])
         
-        # التجميع حسب النوع لمنع التكرار
+        # التجميع حسب النوع لمنع التكرار (هنا التعديل الأساسي)
         grouped_works = df_works_sorted.groupby('activity_type')
         
         for atype, group in grouped_works:
-            # طباعة عنوان المجموعة مرة واحدة فقط
+            # طباعة عنوان المجموعة مرة واحدة فقط خارج حلقة العناصر
             pdf.set_font("Amiri", '', 13)
             pdf.set_text_color(30, 60, 140)
             
-            # --- تعديل: إضافة مسافة قبل العنوان ---
             pdf.ln(2) 
             
             type_title = process_text_for_pdf(f"• {atype}")
@@ -419,9 +420,7 @@ def generate_cv_pdf(user, df_works):
                 final_text = process_text_for_pdf(full_text)
                 
                 pdf.multi_cell(190, 6, final_text, align='R')
-                # pdf.ln(1) # تم تقليل المسافة هنا للحفاظ على المساحة
             
-            # مسافة بعد انتهاء المجموعة
             pdf.ln(2)
             
     else:
