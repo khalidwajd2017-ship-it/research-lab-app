@@ -365,8 +365,9 @@ def generate_cv_pdf(user, df_works):
         pdf.cell(0, 10, "Arabic font not loaded.", ln=True)
         return bytes(pdf.output())
 
-    pdf = PDF()
-    # تفعيل الفاصل التلقائي وهو الحل الجذري للمشكلة
+    pdf = FPDF()
+    # ============ التعديل الجوهري: تفعيل الفاصل التلقائي ============
+    # هذا يضمن أن المكتبة تدير الانتقال للصفحة التالية تلقائياً عند امتلاء الصفحة
     pdf.set_auto_page_break(auto=True, margin=20) 
     
     pdf.add_font('Amiri', '', font_path)
@@ -390,7 +391,7 @@ def generate_cv_pdf(user, df_works):
     pdf.cell(0, 6, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(8)
     
-    # --- الجدول ---
+    # --- عنوان القائمة ---
     pdf.set_font("Amiri", '', 14)
     header = process_text_for_pdf("قائمة الأنشطة والنتاجات العلمية")
     pdf.set_draw_color(150, 150, 150)
@@ -399,7 +400,7 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(5)
     
     if not df_works.empty:
-        # فرز البيانات
+        # فرز البيانات: النوع، ثم السنة تنازلياً
         df_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
         current_type = None
