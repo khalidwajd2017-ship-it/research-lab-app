@@ -11,7 +11,7 @@ import base64
 import os
 import io
 import requests
-from fpdf import FPDF # fpdf2 تستخدم نفس الاستيراد
+from fpdf import FPDF
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -308,101 +308,111 @@ def to_excel(df):
     except: return None
 
 # --- دالة تحميل الخط ومعالجة العربية ---
-def download_font():
+def ensure_font_exists():
     font_path = "Cairo-Regular.ttf"
     if not os.path.exists(font_path):
         try:
             url = "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Regular.ttf"
-            response = requests.get(url)
-            with open(font_path, "wb") as f:
-                f.write(response.content)
-        except: pass
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                with open(font_path, "wb") as f:
+                    f.write(response.content)
+                return font_path
+            else:
+                return None
+        except:
+            return None
     return font_path
 
-def process_arabic_text(text):
+def process_text_for_pdf(text):
+    """
+    يجهز النص العربي للظهور بشكل صحيح في PDF
+    """
     if not text: return ""
+    text = str(text) # التأكد من أن المدخل نص
     try:
-        reshaped_text = arabic_reshaper.reshape(str(text))
+        reshaped_text = arabic_reshaper.reshape(text)
         bidi_text = get_display(reshaped_text)
         return bidi_text
-    except: return text
+    except:
+        return text
 
 class PDF(FPDF):
     def header(self):
         pass
     def footer(self):
         self.set_y(-15)
-        # Check if Cairo font is added, otherwise use standard
+        # استخدام خط Cairo إذا كان متاحاً
         if 'Cairo' in self.font_files:
              self.set_font('Cairo', '', 8)
         else:
-             self.set_font('Helvetica', '', 8) # Helvetica is standard in fpdf
-        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+             self.set_font('Arial', '', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', align='C')
 
 def generate_cv_pdf(user, df_works):
-    font_path = download_font()
+    font_path = ensure_font_exists()
     
+    if not font_path:
+        raise Exception("فشل في تحميل خط اللغة العربية. تأكد من الاتصال بالإنترنت.")
+
     pdf = PDF()
-    
-    # محاولة إضافة الخط العربي
-    font_added = False
-    if os.path.exists(font_path):
-        try:
-            pdf.add_font('Cairo', '', font_path) # fpdf2 لا يحتاج uni=True
-            font_added = True
-        except Exception as e:
-            print(f"Font loading error: {e}")
-            
+    # إضافة الخط العربي. fpdf2 يدعم Unicode مباشرة عبر add_font
+    pdf.add_font('Cairo', '', font_path)
     pdf.add_page()
     
-    # تحديد الخط الرئيسي
-    main_font = 'Cairo' if font_added else 'Helvetica'
+    # استخدام الخط العربي
+    pdf.set_font("Cairo", '', 18)
     
     # العنوان الرئيسي
-    pdf.set_font(main_font, '', 18)
-    title = process_arabic_text(f"السيرة الذاتية الأكاديمية: {user.full_name}")
+    title = process_text_for_pdf(f"السيرة الذاتية الأكاديمية: {user.full_name}")
     pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
-    
+    pdf.ln(5)
+
     # المعلومات الشخصية
-    pdf.set_font(main_font, '', 12)
-    role_text = process_arabic_text(f"الصفة: {MEMBER_TYPES.get(user.member_type, user.role)}")
-    # التعامل مع القيم الفارغة لتجنب الأخطاء
+    pdf.set_font("Cairo", '', 12)
+    role_str = MEMBER_TYPES.get(user.member_type, user.role)
+    role_text = process_text_for_pdf(f"الصفة: {role_str}")
+    
     dept_name = user.department.name_ar if user.department else 'غير محدد'
     team_name = user.team.name if user.team else dept_name
-    team_text = process_arabic_text(f"الهيكل: {team_name}")
+    team_text = process_text_for_pdf(f"الهيكل: {team_name}")
     
     pdf.cell(0, 10, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.cell(0, 10, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
-    pdf.ln(5)
+    pdf.ln(10)
     
     # قائمة الأعمال
-    pdf.set_font(main_font, '', 14)
-    header = process_arabic_text("الأنشطة والنتاجات العلمية")
-    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.set_font("Cairo", '', 14)
+    header = process_text_for_pdf("الأنشطة والنتاجات العلمية")
+    # رسم خط فاصل
+    pdf.set_draw_color(0, 0, 0)
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
     if not df_works.empty:
         grouped = df_works.groupby('activity_type')
         for atype, subset in grouped:
-            # نوع النشاط
-            pdf.set_font(main_font, '', 13)
-            pdf.set_text_color(30, 60, 140)
-            type_title = process_arabic_text(f"• {atype}")
+            # عنوان نوع النشاط
+            pdf.set_font("Cairo", '', 13)
+            pdf.set_text_color(30, 60, 140) # أزرق داكن
+            type_title = process_text_for_pdf(f"• {atype}")
             pdf.cell(0, 10, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
-            # الأعمال تحت هذا النوع
+            # تفاصيل الأعمال
             pdf.set_text_color(0, 0, 0)
-            pdf.set_font(main_font, '', 11)
+            pdf.set_font("Cairo", '', 11)
             for _, row in subset.iterrows():
-                work_title = process_arabic_text(f"- {row['title']} ({row['publication_date']})")
-                pdf.multi_cell(0, 8, work_title, align='R')
-            pdf.ln(2)
+                # تجميع النص: العنوان + التاريخ
+                raw_text = f"- {row['title']} ({row['publication_date']})"
+                work_text = process_text_for_pdf(raw_text)
+                pdf.multi_cell(0, 8, work_text, align='R')
+            pdf.ln(3)
     else:
-        no_data = process_arabic_text("لا توجد أعمال مسجلة.")
+        pdf.set_font("Cairo", '', 12)
+        no_data = process_text_for_pdf("لا توجد أعمال مسجلة حتى الآن.")
         pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
-    # fpdf2 returns bytes directly
     return pdf.output()
 
 # ==========================================
