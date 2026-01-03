@@ -392,31 +392,27 @@ def generate_cv_pdf(user, df_works):
     pdf.ln(2)
     
     if not df_works.empty:
-        # 1. ترتيب البيانات حسب النوع والتاريخ
+        # فرز البيانات حسب السنة ثم النوع
         df_works_sorted = df_works.sort_values(by=['activity_type', 'year'], ascending=[True, False])
         
-        # 2. التجميع حسب نوع النشاط
-        # ملاحظة هامة: في pandas, التكرار عبر groupby يعيد (key, dataframe)
-        grouped = df_works_sorted.groupby('activity_type', sort=False)
+        # التجميع حسب النوع لمنع التكرار (هنا التعديل الأساسي)
+        grouped_works = df_works_sorted.groupby('activity_type', sort=False)
         
-        for atype, group_data in grouped:
-            # --- طباعة العنوان (نوع النشاط) مرة واحدة ---
+        for atype, group in grouped_works:
+            # طباعة عنوان المجموعة مرة واحدة فقط خارج حلقة العناصر
             pdf.set_font("Amiri", '', 13)
             pdf.set_text_color(30, 60, 140)
             
-            # إضافة مسافة قبل العنوان الجديد
-            if pdf.get_y() > 250: pdf.add_page() # صفحة جديدة يدوياً إذا اقتربنا من الحافة
-            pdf.ln(2)
+            pdf.ln(2) 
             
             type_title = process_text_for_pdf(f"• {atype}")
             pdf.cell(0, 8, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
-            # --- طباعة العناصر (الأعمال) تحت العنوان ---
+            # طباعة العناصر تحت هذا العنوان
             pdf.set_text_color(0, 0, 0)
             pdf.set_font("Amiri", '', 11)
             
-            # هنا نقوم بالتكرار على كل صف داخل المجموعة لطباعته
-            for idx, row in group_data.iterrows():
+            for idx, row in group.iterrows(): # تم تصحيح طريقة التكرار
                 title_clean = str(row['title'])
                 date_clean = str(row['publication_date'])
                 
