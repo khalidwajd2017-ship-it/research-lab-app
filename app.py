@@ -11,7 +11,7 @@ import base64
 import os
 import io
 import requests
-from fpdf import FPDF
+from fpdf import FPDF # fpdf2 تستخدم نفس الاستيراد
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -332,43 +332,53 @@ class PDF(FPDF):
         pass
     def footer(self):
         self.set_y(-15)
-        try:
-            self.set_font('Cairo', '', 8)
-        except:
-            self.set_font('Arial', '', 8)
+        # Check if Cairo font is added, otherwise use standard
+        if 'Cairo' in self.font_files:
+             self.set_font('Cairo', '', 8)
+        else:
+             self.set_font('Helvetica', '', 8) # Helvetica is standard in fpdf
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def generate_cv_pdf(user, df_works):
     font_path = download_font()
     
     pdf = PDF()
-    # إضافة الخط العربي
+    
+    # محاولة إضافة الخط العربي
+    font_added = False
     if os.path.exists(font_path):
-        pdf.add_font('Cairo', '', font_path, uni=True)
-        main_font = 'Cairo'
-    else:
-        main_font = 'Arial' # Fallback
-        
+        try:
+            pdf.add_font('Cairo', '', font_path) # fpdf2 لا يحتاج uni=True
+            font_added = True
+        except Exception as e:
+            print(f"Font loading error: {e}")
+            
     pdf.add_page()
+    
+    # تحديد الخط الرئيسي
+    main_font = 'Cairo' if font_added else 'Helvetica'
     
     # العنوان الرئيسي
     pdf.set_font(main_font, '', 18)
     title = process_arabic_text(f"السيرة الذاتية الأكاديمية: {user.full_name}")
-    pdf.cell(0, 10, title, 0, 1, 'C')
+    pdf.cell(0, 10, title, new_x="LMARGIN", new_y="NEXT", align='C')
     
     # المعلومات الشخصية
     pdf.set_font(main_font, '', 12)
     role_text = process_arabic_text(f"الصفة: {MEMBER_TYPES.get(user.member_type, user.role)}")
-    team_text = process_arabic_text(f"الهيكل: {user.team.name if user.team else (user.department.name_ar if user.department else 'غير محدد')}")
+    # التعامل مع القيم الفارغة لتجنب الأخطاء
+    dept_name = user.department.name_ar if user.department else 'غير محدد'
+    team_name = user.team.name if user.team else dept_name
+    team_text = process_arabic_text(f"الهيكل: {team_name}")
     
-    pdf.cell(0, 10, role_text, 0, 1, 'R')
-    pdf.cell(0, 10, team_text, 0, 1, 'R')
+    pdf.cell(0, 10, role_text, new_x="LMARGIN", new_y="NEXT", align='R')
+    pdf.cell(0, 10, team_text, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.ln(5)
     
     # قائمة الأعمال
     pdf.set_font(main_font, '', 14)
     header = process_arabic_text("الأنشطة والنتاجات العلمية")
-    pdf.cell(0, 10, header, 0, 1, 'R')
+    pdf.cell(0, 10, header, new_x="LMARGIN", new_y="NEXT", align='R')
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(5)
     
@@ -379,20 +389,21 @@ def generate_cv_pdf(user, df_works):
             pdf.set_font(main_font, '', 13)
             pdf.set_text_color(30, 60, 140)
             type_title = process_arabic_text(f"• {atype}")
-            pdf.cell(0, 10, type_title, 0, 1, 'R')
+            pdf.cell(0, 10, type_title, new_x="LMARGIN", new_y="NEXT", align='R')
             
             # الأعمال تحت هذا النوع
             pdf.set_text_color(0, 0, 0)
             pdf.set_font(main_font, '', 11)
             for _, row in subset.iterrows():
                 work_title = process_arabic_text(f"- {row['title']} ({row['publication_date']})")
-                pdf.multi_cell(0, 8, work_title, 0, 'R')
+                pdf.multi_cell(0, 8, work_title, align='R')
             pdf.ln(2)
     else:
         no_data = process_arabic_text("لا توجد أعمال مسجلة.")
-        pdf.cell(0, 10, no_data, 0, 1, 'R')
+        pdf.cell(0, 10, no_data, new_x="LMARGIN", new_y="NEXT", align='R')
         
-    return pdf.output(dest='S').encode('latin-1') # هنا latin-1 وهمي لأننا استخدمنا uni=True في الخط
+    # fpdf2 returns bytes directly
+    return pdf.output()
 
 # ==========================================
 # 4. التنسيق (CSS) - المحاذاة والجماليات
