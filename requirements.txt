@@ -5,6 +5,7 @@ psycopg2-binary
 bcrypt
 plotly
 xlsxwriter
-fpdf
+fpdf2
 arabic-reshaper
 python-bidi
+requests
