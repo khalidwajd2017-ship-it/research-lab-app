@@ -1,1 +1,1 @@
-
+web: streamlit run app/main.py
