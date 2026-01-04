@@ -8,3 +8,4 @@ arabic-reshaper
 bidi
 requests
 psycopg2-binary
+python-bidi
