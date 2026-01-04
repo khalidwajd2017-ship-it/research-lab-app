@@ -1,11 +1,10 @@
 streamlit
 pandas
 sqlalchemy
-psycopg2-binary
 bcrypt
 plotly
-xlsxwriter
-fpdf2
+fpdf
 arabic-reshaper
-python-bidi
+bidi
 requests
+psycopg2-binary
