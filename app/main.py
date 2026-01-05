@@ -1,6 +1,6 @@
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), 'app'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'app')))
 import streamlit as st
 from app.auth import auth_user, register_user_secure
 from app.services import get_smart_data, add_work_service, update_work_service, delete_work_service
